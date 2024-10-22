@@ -64,47 +64,42 @@
 // });
 
 
-
 const express = require("express");
-const mongoose = require("mongoose");
+const { MongoClient } = require("mongodb");
+const cors = require("cors");
 const app = express();
-require("dotenv").config(); // Load environment variables
-const Book = require("./model/model.js"); // Import the Book model
 const port = process.env.PORT || 3000;
+const Book = require("./model/model.js"); // Import the Book model // Import the model
 
-// Middleware to parse incoming JSON requests
+// Middleware to parse JSON bodies
 app.use(express.json());
+app.use(cors());
 
-// MongoDB connection using environment variable or hardcoded URI
+// MongoDB Atlas connection URI
 const mongoURI =
   process.env.MONGO_URI ||
-  "mongodb+srv://mongodb+srv://admin:Sapienza786@cluster0.pvvuh.mongodb.net/ncbi?retryWrites=true&w=majority";
+  "mongodb+srv://admin:Sapienza786@cluster0.pvvuh.mongodb.net/ncbi?retryWrites=true&w=majority";
+let db;
 
-mongoose
-  .connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log("Connected to MongoDB"))
-  .catch((err) => console.log("Error connecting to MongoDB:", err));
+// Connect to MongoDB Atlas
+MongoClient.connect(mongoURI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+  .then((client) => {
+    db = client.db("ncbi"); // Use your desired database name
+    console.log("Connected to MongoDB Atlas");
+  })
+  .catch((err) => {
+    console.error("Failed to connect to MongoDB Atlas. Error:", err);
+    process.exit(1);
+  });
 
-// POST endpoint to handle search requests from the frontend
-app.post("/search", async (req, res) => {
-  const { query, type } = req.body; // Get query and type from the request body
-
+// Route to get data
+app.get("/getData", async (req, res) => {
   try {
-    let results;
-
-    if (type === "scientific_name") {
-      // Search by scientific name using the `Taxon` field (case-insensitive)
-      results = await Book.find({ Taxon: new RegExp(query, "i") });
-    } else if (type === "id") {
-      // Search by `id` field for exact matches
-      results = await Book.find({ id: query });
-    }
-
-    if (results.length > 0) {
-      res.status(200).json(results); // Return the matching results
-    } else {
-      res.status(404).json({ message: "No results found for your query." });
-    }
+    const data = await db.collection("books").find().toArray();
+    res.status(200).json(data);
   } catch (error) {
     console.error("Error fetching data:", error);
     res.status(500).json({ error: "Could not get documents", details: error });
@@ -113,5 +108,8 @@ app.post("/search", async (req, res) => {
 
 // Start the server
 app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+  console.log(`Server running on port ${port}`);
 });
+
+
+
