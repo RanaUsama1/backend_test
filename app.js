@@ -96,7 +96,7 @@ MongoClient.connect(mongoURI, {
   });
 
 // Route to get data
-app.get("/getData", async (req, res) => {
+app.get("/search", async (req, res) => {
   try {
     const data = await db.collection("books").find().toArray();
     res.status(200).json(data);
