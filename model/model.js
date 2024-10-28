@@ -185,5 +185,5 @@ const bookSchema = new mongoose.Schema(
   { collection: "sample_data" }
 );
 
-const Book = mongoose.model("Book", bookSchema);
+const Book = mongoose.model("sample_data", bookSchema);
 module.exports = Book;

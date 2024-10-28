@@ -96,15 +96,35 @@ MongoClient.connect(mongoURI, {
   });
 
 // Route to get data
-app.get("/search", async (req, res) => {
+// app.get("/search", async (req, res) => {
+//   try {
+//     const data = await db.collection("books").find().toArray();
+//     res.status(200).json(data);
+//   } catch (error) {
+//     console.error("Error fetching data:", error);
+//     res.status(500).json({ error: "Could not get documents", details: error });
+//   }
+// });
+
+app.post("/search", async (req, res) => {
+  const { query } = req.body;
+
   try {
-    const data = await db.collection("books").find().toArray();
-    res.status(200).json(data);
+    // Search the 'sample_data' collection where 'Submitted GenBank assembly' matches the query
+    const result = await Book.findOne({ "Submitted GenBank assembly": query });
+
+    if (result) {
+      res.status(200).json(result); // Return the document as JSON if found
+    } else {
+      res.status(404).json({ message: "No results found for your query." });
+    }
   } catch (error) {
     console.error("Error fetching data:", error);
-    res.status(500).json({ error: "Could not get documents", details: error });
+    res.status(500).json({ error: "Could not fetch document", details: error });
   }
 });
+
+
 
 // Start the server
 app.listen(port, () => {
