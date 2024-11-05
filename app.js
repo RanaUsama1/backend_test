@@ -105,23 +105,23 @@ app.use('/api/books', bookRoutes);
 //   }
 // });
 
-app.post("/search", async (req, res) => {
-  const { query } = req.body;
+// app.post("/search", async (req, res) => {
+//   const { query } = req.body;
 
-  try {
-    // Search the 'sample_data' collection where 'Submitted GenBank assembly' matches the query
-    const result = await Book.findOne({ "Submitted GenBank assembly": query });
+//   try {
+//     // Search the 'sample_data' collection where 'Submitted GenBank assembly' matches the query
+//     const result = await Book.findOne({ "Submitted GenBank assembly": query });
 
-    if (result) {
-      res.status(200).json(result); // Return the document as JSON if found
-    } else {
-      res.status(404).json({ message: "No results found for your query." });
-    }
-  } catch (error) {
-    console.error("Error fetching data:", error);
-    res.status(500).json({ error: "Could not fetch document", details: error });
-  }
-});
+//     if (result) {
+//       res.status(200).json(result); // Return the document as JSON if found
+//     } else {
+//       res.status(404).json({ message: "No results found for your query." });
+//     }
+//   } catch (error) {
+//     console.error("Error fetching data:", error);
+//     res.status(500).json({ error: "Could not fetch document", details: error });
+//   }
+// });
 
 
 
