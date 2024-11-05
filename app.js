@@ -52,7 +52,7 @@ const cors = require("cors");
 const app = express();
 require("dotenv").config();
 const port = process.env.PORT || 3000;
-const bookRoutes = require("./routes/books");
+const bookRoutes = require("./routes/books.js");
 // const { MongoClient } = require("mongodb");
 // const Book = require("./model/model.js"); // Import the Book model // Import the model
 
