@@ -7,10 +7,6 @@
 // const port = 3000;
 // const Book = require("./model/model.js"); // Import the model
 
-// // Middleware to parse JSON bodies
-// app.use(express.json());
-// app.use(cors());
-
 // // MongoDB connection URL and database name
 // const url = "mongodb+srv://admin:Sapienza786@cluster0.pvvuh.mongodb.net/";
 // // const dbName = "ncbi";
@@ -37,9 +33,6 @@
 //   }
 // });
 
-// app.listen(port, () => {
-//   console.log(`Server running at http://localhost:${port}`);
-// });
 
 // // Connect to MongoDB
 // MongoClient.connect(url, { useNewUrlParser: true, useUnifiedTopology: true })
@@ -52,48 +45,54 @@
 //     process.exit(1);
 //   });
 
-// Route to get data
-// app.get("/getData", async (req, res) => {
-//   try {
-//     const data = await db.collection("sample_data").find().toArray();
-//     res.status(200).json(data);
-//   } catch (error) {
-//     console.error("Error fetching data:", error);
-//     res.status(500).json({ error: "Could not get documents", details: error });
-//   }
-// });
-
 
 const express = require("express");
-const { MongoClient } = require("mongodb");
+const mongoose = require("mongoose");
 const cors = require("cors");
 const app = express();
+require("dotenv").config();
 const port = process.env.PORT || 3000;
-const Book = require("./model/model.js"); // Import the Book model // Import the model
+const bookRoutes = require("./routes/books");
+// const { MongoClient } = require("mongodb");
+// const Book = require("./model/model.js"); // Import the Book model // Import the model
 
 // Middleware to parse JSON bodies
 app.use(express.json());
 app.use(cors());
 
-// MongoDB Atlas connection URI
-const mongoURI =
-  process.env.MONGO_URI ||
-  "mongodb+srv://admin:Sapienza786@cluster0.pvvuh.mongodb.net/ncbi?retryWrites=true&w=majority";
-let db;
-
-// Connect to MongoDB Atlas
-MongoClient.connect(mongoURI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
+// Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
 })
-  .then((client) => {
-    db = client.db("ncbi"); // Use your desired database name
-    console.log("Connected to MongoDB Atlas");
-  })
-  .catch((err) => {
-    console.error("Failed to connect to MongoDB Atlas. Error:", err);
-    process.exit(1);
-  });
+.then(() => console.log("Connected to MongoDB"))
+.catch(err => console.error("MongoDB connection error:", err));
+
+// Use the routes
+
+app.use('/api/books', bookRoutes);
+
+
+
+// MongoDB Atlas connection URI
+// const mongoURI =
+//   process.env.MONGO_URI ||
+//   "mongodb+srv://admin:Sapienza786@cluster0.pvvuh.mongodb.net/ncbi?retryWrites=true&w=majority";
+// let db;
+
+// // Connect to MongoDB Atlas
+// MongoClient.connect(mongoURI, {
+//   useNewUrlParser: true,
+//   useUnifiedTopology: true,
+// })
+//   .then((client) => {
+//     db = client.db("ncbi"); // Use your desired database name
+//     console.log("Connected to MongoDB Atlas");
+//   })
+//   .catch((err) => {
+//     console.error("Failed to connect to MongoDB Atlas. Error:", err);
+//     process.exit(1);
+//   });
 
 // Route to get data
 // app.get("/search", async (req, res) => {

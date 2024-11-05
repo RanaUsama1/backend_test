@@ -138,7 +138,7 @@ const bookSchema = new mongoose.Schema(
       unique: true,
     },
     // "Submitted GenBank assembly": {
-    //   type: Schema.Types.ObjectId,
+    //   type: Schema.Types.ObjectId, 
     //   required: true,
     // },
     "Submitted GenBank assembly": {
