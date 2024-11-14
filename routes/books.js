@@ -56,21 +56,38 @@ router.get("/getData", async (req, res) => {
 //   }
 // });
 
-router.post("/search", async (req, res) => {
+// Route to fetch all taxons starting with a specific substring
+router.post('/search-options', async (req, res) => {
+  const { query } = req.body;
+
+  try {
+    // Use a regex to find all documents where `Taxon` starts with `query`
+    const searchQuery = new RegExp(`^${query}`, 'i'); // '^' ensures it starts with the substring
+    const results = await Book.find({ "Taxon": searchQuery }).select("Taxon");
+
+    if (results.length > 0) {
+      res.status(200).json(results);
+    } else {
+      res.status(404).json({ message: "No matching taxons found." });
+    }
+  } catch (error) {
+    console.error("Error fetching data:", error);
+    res.status(500).json({ error: "Could not fetch matching taxons", details: error });
+  }
+});
+
+// Route to search a specific record by "Taxon" or "Submitted GenBank assembly"
+router.post('/search', async (req, res) => {
   const { query, type } = req.body;
 
   try {
     let result;
-
-    // Use a regex to enable partial matching
-    const searchQuery = new RegExp(query, "i"); // 'i' makes it case-insensitive
+    const searchQuery = new RegExp(`^${query}$`, 'i'); // Exact match
 
     if (type === "scientific_name") {
-      result = await Book.findOne({ Taxon: searchQuery });
+      result = await Book.findOne({ "Taxon": searchQuery });
     } else if (type === "id") {
-      result = await Book.findOne({
-        "Submitted GenBank assembly": searchQuery,
-      });
+      result = await Book.findOne({ "Submitted GenBank assembly": query });
     }
 
     if (result) {
