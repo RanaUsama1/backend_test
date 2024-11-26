@@ -1,7 +1,9 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import requests
 
 app = Flask(__name__)
+CORS(app)
 
 NCBI_BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 
@@ -58,6 +60,7 @@ def search_species_data(species_name):
 def species_list():
     species = fetch_species_list()
     return jsonify(species)
+    pass
 
 @app.route('/search', methods=['POST'])
 def search():
@@ -65,9 +68,10 @@ def search():
     species_name = data.get("query", "")
     metadata = search_species_data(species_name)
     return jsonify({"species_name": species_name, "metadata": metadata})
+    pass
 
-import os
 
 if __name__ == '__main__':
+    import os
     port = int(os.environ.get('PORT', 5000))  # Default to 5000 if PORT is not set
     app.run(host='0.0.0.0', port=port, debug=True)
