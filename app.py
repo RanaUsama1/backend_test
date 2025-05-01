@@ -12,8 +12,9 @@ import httpx
 from datetime import datetime
 from Bio.Entrez import Parser
 from Bio.Entrez.Parser import StringElement
+from dotenv import load_dotenv
 import json
-import asyncio
+import asyncio 
 
 # Configure email for NCBI API
 Entrez.email = "abdullah.1970333@studenti.uniroma1.it"
@@ -31,14 +32,23 @@ except Exception as e:
 
 # Create FastAPI app
 app = FastAPI()
+load_dotenv()
 
 # Configure CORS
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[
+        "http://localhost:8080",  # Local dev
+        "https://your-frontend.vercel.app"  # Production
+    ],
+    allow_methods=["*"]
 )
 
 # Set up logging
