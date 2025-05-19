@@ -46,9 +46,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:8080",  # Local dev
-        "https://your-frontend.vercel.app"  # Production
-    ],
-    allow_methods=["*"]
+        "https://ncbibackend.vercel.app",  # Production
+        "http://localhost:5173",  # Add Vite's default port
+        "http://127.0.0.1:5173",  # Also allow this alternative
+        "https://ranausama1.github.io/database_test/"
+    ],                                          
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Set up logging
