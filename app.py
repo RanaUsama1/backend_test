@@ -46,10 +46,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:8080",  # Local dev
-        "https://ncbibackend.vercel.app",  # Production
         "http://localhost:5173",  # Add Vite's default port
-        "http://127.0.0.1:5173",  # Also allow this alternative
-        "https://ranausama1.github.io/database_test/"
+        "https://ranausama1.github.io",  # GitHub Pages domain (remove trailing slash)
+        "https://ranausama1.github.io/database_test"  # GitHub Pages project path
     ],                                          
     allow_credentials=True,
     allow_methods=["*"],
