@@ -6,3 +6,6 @@ pymongo
 biopython
 flask
 flask-cors
+slowapi
+requests
+biopython
