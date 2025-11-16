@@ -137,8 +137,41 @@ async def save_to_cache(metadata: dict):
 #         logger.error(f"Error fetching assembly metadata for {accession}: {str(e)}")
 #         return create_minimal_metadata(accession, f"Error: {str(e)}")
 
+# async def fetch_assembly_metadata(accession: str):
+#     """Main assembly metadata fetcher - PREFER ENA when NCBI is down"""
+#     try:
+#         # Check cache first
+#         cached_data = await check_cache("assembly", accession)
+#         if cached_data:
+#             return cached_data
+
+#         logger.info(f"Fetching assembly metadata for: {accession}")
+        
+#         # TRY ENA FIRST (more reliable when NCBI is down)
+#         logger.info("Trying ENA first due to NCBI issues...")
+#         ena_data = await fetch_ena_metadata(accession)
+#         if ena_data and ena_data.get("organism", {}).get("sci_name") != "Unknown":
+#             logger.info(f"✅ ENA success for {accession}")
+#             return await save_to_cache(ena_data)
+        
+#         # Fallback to NCBI if ENA fails
+#         if accession.startswith('UID_'):
+#             uid_number = accession.replace('UID_', '')
+#             ncbi_data = await fetch_assembly_by_uid(uid_number)
+#         else:
+#             ncbi_data = await fetch_assembly_by_accession(accession)
+            
+#         if ncbi_data:
+#             return await save_to_cache(ncbi_data)
+        
+#         return create_minimal_metadata(accession, "All sources failed")
+        
+#     except Exception as e:
+#         logger.error(f"Error fetching assembly metadata for {accession}: {str(e)}")
+#         return create_minimal_metadata(accession, f"Error: {str(e)}")
+
 async def fetch_assembly_metadata(accession: str):
-    """Main assembly metadata fetcher - PREFER ENA when NCBI is down"""
+    """Main assembly metadata fetcher with enhanced fallback"""
     try:
         # Check cache first
         cached_data = await check_cache("assembly", accession)
@@ -147,28 +180,109 @@ async def fetch_assembly_metadata(accession: str):
 
         logger.info(f"Fetching assembly metadata for: {accession}")
         
-        # TRY ENA FIRST (more reliable when NCBI is down)
-        logger.info("Trying ENA first due to NCBI issues...")
-        ena_data = await fetch_ena_metadata(accession)
-        if ena_data and ena_data.get("organism", {}).get("sci_name") != "Unknown":
-            logger.info(f"✅ ENA success for {accession}")
-            return await save_to_cache(ena_data)
+        approaches = [
+            {"name": "ENA", "func": fetch_ena_metadata},
+            {"name": "NCBI Assembly", "func": fetch_assembly_by_accession},
+            {"name": "NCBI Datasets", "func": fetch_ncbi_datasets_direct},
+        ]
         
-        # Fallback to NCBI if ENA fails
-        if accession.startswith('UID_'):
-            uid_number = accession.replace('UID_', '')
-            ncbi_data = await fetch_assembly_by_uid(uid_number)
-        else:
-            ncbi_data = await fetch_assembly_by_accession(accession)
-            
-        if ncbi_data:
-            return await save_to_cache(ncbi_data)
+        for approach in approaches:
+            try:
+                logger.info(f"Trying {approach['name']} for {accession}")
+                data = await approach['func'](accession)
+                
+                if data and is_valid_assembly_data(data):
+                    logger.info(f"✅ {approach['name']} success for {accession}")
+                    
+                    # Enhance with additional statistics if missing
+                    if missing_stats(data):
+                        enhanced_stats = await fetch_enhanced_assembly_stats(accession)
+                        if enhanced_stats:
+                            data.update(enhanced_stats)
+                            data['additional_info'] = f"Data from {approach['name']} with enhanced statistics"
+                    
+                    return await save_to_cache(data)
+                    
+            except Exception as e:
+                logger.warning(f"{approach['name']} failed for {accession}: {str(e)}")
+                continue
         
-        return create_minimal_metadata(accession, "All sources failed")
+        # All approaches failed
+        logger.error(f"All approaches failed for {accession}")
+        return create_minimal_metadata(accession, "All data sources failed")
         
     except Exception as e:
         logger.error(f"Error fetching assembly metadata for {accession}: {str(e)}")
         return create_minimal_metadata(accession, f"Error: {str(e)}")
+
+def is_valid_assembly_data(data: dict) -> bool:
+    """Check if assembly data is valid and has basic information"""
+    if not data or data.get("database") == "minimal":
+        return False
+    
+    organism = data.get("organism", {})
+    sci_name = organism.get("sci_name", "")
+    
+    # Consider data valid if it has a scientific name or assembly name
+    return (
+        sci_name not in ["Unknown", None, ""] or
+        data.get("assembly_name") not in ["Unknown", None, ""]
+    )
+
+def missing_stats(data: dict) -> bool:
+    """Check if critical statistics are missing"""
+    return (
+        data.get("genome_size") in ["N/A", None, ""] or
+        data.get("contig_n50") in ["N/A", None, ""] or
+        data.get("gc_percent") in ["N/A", None, ""]
+    )
+
+async def fetch_ncbi_datasets_direct(accession: str):
+    """Direct NCBI Datasets API fetch"""
+    try:
+        url = f"https://api.ncbi.nlm.nih.gov/datasets/v2alpha/assembly/{accession}"
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (compatible; ResearchApp/1.0)"
+        }
+        
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            return parse_ncbi_datasets_response(data, accession)
+        return None
+    except Exception as e:
+        logger.debug(f"NCBI Datasets direct fetch failed: {str(e)}")
+        return None
+
+def parse_ncbi_datasets_response(data: dict, accession: str):
+    """Parse NCBI Datasets API response"""
+    try:
+        if 'assembly' not in data:
+            return None
+            
+        assembly_data = data['assembly']
+        org_info = assembly_data.get('org', {})
+        
+        return {
+            "database": "assembly",
+            "accession": accession,
+            "organism": {
+                "sci_name": org_info.get('sci_name', 'Unknown'),
+                "common_name": org_info.get('common_name', 'Unknown'),
+                "tax_id": str(org_info.get('tax_id', 'N/A'))
+            },
+            "assembly_name": assembly_data.get('assembly_name', f'Assembly {accession}'),
+            "assembly_level": assembly_data.get('assembly_level', 'N/A'),
+            "submission_date": assembly_data.get('submit_date', 'N/A'),
+            # Add other fields as needed
+            "ftp_path": f"https://www.ncbi.nlm.nih.gov/datasets/genome/{accession}/",
+            "additional_info": "Data from NCBI Datasets API",
+            "last_updated": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.debug(f"Error parsing NCBI Datasets response: {str(e)}")
+        return None
 
 
 async def fetch_assembly_by_uid(uid: str):
@@ -446,53 +560,201 @@ def parse_datasets_stats(data: dict):
         return None
 
 
+# async def fetch_ena_metadata(accession: str):
+#     """Fetch metadata from ENA as fallback"""
+#     try:
+#         base_accession = accession.split('.')[0]
+        
+#         # Try ENA endpoint
+#         url = f"https://www.ebi.ac.uk/ena/portal/api/filereport?accession={base_accession}&result=assembly&format=json"
+        
+#         response = requests.get(url, timeout=10)
+#         if response.status_code == 200:
+#             data = response.json()
+#             if data and isinstance(data, list) and len(data) > 0:
+#                 ena_data = parse_ena_response(data[0], accession)
+#                 if ena_data:
+#                     logger.info(f"✅ ENA data found for {accession}")
+#                     return ena_data
+        
+#         return None
+        
+#     except Exception as e:
+#         logger.warning(f"ENA fetch failed for {accession}: {str(e)}")
+#         return None
+
+# async def fetch_ena_metadata(accession: str):
+#     """Fetch metadata from ENA as fallback"""
+#     try:
+#         base_accession = accession.split('.')[0]
+        
+#         # Try ENA endpoint
+#         url = f"https://www.ebi.ac.uk/ena/portal/api/filereport?accession={base_accession}&result=assembly&format=json"
+        
+#         logger.info(f"Fetching ENA data from: {url}")
+#         response = requests.get(url, timeout=10)
+        
+#         if response.status_code == 200:
+#             data = response.json()
+#             logger.info(f"ENA raw response: {data}")
+            
+#             if data and isinstance(data, list) and len(data) > 0:
+#                 ena_item = data[0]
+#                 logger.info(f"ENA item keys: {ena_item.keys()}")
+                
+#                 ena_data = parse_ena_response(ena_item, accession)
+#                 logger.info(f"Parsed ENA data: {ena_data}")
+                
+#                 if ena_data and ena_data.get("organism", {}).get("sci_name") not in ["Unknown", None, ""]:
+#                     logger.info(f"✅ ENA data found for {accession}")
+#                     return ena_data
+#                 else:
+#                     logger.warning(f"ENA data has invalid organism name for {accession}")
+        
+#         logger.warning(f"No valid ENA data found for {accession}")
+#         return None
+        
+#     except Exception as e:
+#         logger.warning(f"ENA fetch failed for {accession}: {str(e)}")
+#         return None
+
 async def fetch_ena_metadata(accession: str):
     """Fetch metadata from ENA as fallback"""
     try:
         base_accession = accession.split('.')[0]
         
         # Try ENA endpoint
-        url = f"https://www.ebi.ac.uk/ena/portal/api/filereport?accession={base_accession}&result=assembly&format=json"
+        url = f"https://www.ebi.ac.uk/ena/portal/api/filereport?accession={base_accession}&result=assembly&fields=all&format=json"
         
+        logger.info(f"Fetching ENA data from: {url}")
         response = requests.get(url, timeout=10)
+        
         if response.status_code == 200:
             data = response.json()
+            logger.info(f"ENA response status: {response.status_code}")
+            logger.info(f"ENA raw response type: {type(data)}")
+            logger.info(f"ENA raw response length: {len(data) if isinstance(data, list) else 'not a list'}")
+            
             if data and isinstance(data, list) and len(data) > 0:
-                ena_data = parse_ena_response(data[0], accession)
-                if ena_data:
-                    logger.info(f"✅ ENA data found for {accession}")
-                    return ena_data
+                ena_item = data[0]
+                logger.info(f"ENA item type: {type(ena_item)}")
+                logger.info(f"ENA item: {ena_item}")
+                
+                # Check what fields are available
+                if ena_item:
+                    logger.info(f"ENA item keys: {list(ena_item.keys())}")
+                    
+                    # Check for scientific name in different possible fields
+                    sci_name = ena_item.get('scientific_name') or ena_item.get('organism_name') or ena_item.get('species')
+                    logger.info(f"ENA scientific name found: {sci_name}")
+                    
+                    ena_data = parse_ena_response(ena_item, accession)
+                    if ena_data:
+                        logger.info(f"✅ Valid ENA data parsed for {accession}")
+                        return ena_data
+                    else:
+                        logger.warning(f"❌ ENA data parsing failed for {accession}")
+            else:
+                logger.warning(f"ENA returned empty or invalid response for {accession}")
         
+        logger.warning(f"No valid ENA data found for {accession}, status: {response.status_code}")
         return None
         
     except Exception as e:
         logger.warning(f"ENA fetch failed for {accession}: {str(e)}")
         return None
 
+# def parse_ena_response(ena_data, accession: str):
+#     """Parse ENA API response"""
+#     try:
+#         return {
+#             "database": "ena",
+#             "accession": accession,
+#             "organism": {
+#                 "sci_name": ena_data.get("scientific_name", "Unknown"),
+#                 "common_name": ena_data.get("common_name", "Unknown"),
+#                 "tax_id": str(ena_data.get("tax_id", "N/A"))
+#             },
+#             "assembly_name": ena_data.get("assembly_name", f"Assembly {accession.split('.')[0]}"),
+#             "assembly_level": ena_data.get("assembly_level", "N/A"),
+#             "submission_date": ena_data.get("first_public", "N/A"),
+#             "genome_size": ena_data.get("total_length", "N/A"),
+#             "contig_n50": ena_data.get("contig_n50", "N/A"),
+#             "number_of_contigs": ena_data.get("number_of_contigs", "N/A"),
+#             "gc_percent": ena_data.get("gc_percent", "N/A"),
+#             "ftp_path": ena_data.get("ftp_path", f"https://www.ebi.ac.uk/ena/browser/view/{accession}"),
+#             "additional_info": "Data from European Nucleotide Archive",
+#             "last_updated": datetime.utcnow().isoformat()
+#         }
+#     except Exception as e:
+#         logger.error(f"Error parsing ENA response: {str(e)}")
+#         return None
+
 def parse_ena_response(ena_data, accession: str):
-    """Parse ENA API response"""
+    """Parse ENA API response with flexible field mapping"""
     try:
-        return {
+        # Flexible field mapping - ENA uses different field names
+        sci_name = (
+            ena_data.get("scientific_name") or 
+            ena_data.get("organism_name") or 
+            ena_data.get("species") or 
+            ena_data.get("organism") or
+            "Unknown"
+        )
+        
+        common_name = ena_data.get("common_name") or ena_data.get("strain") or "Unknown"
+        tax_id = str(ena_data.get("tax_id") or ena_data.get("taxid") or "N/A")
+        
+        assembly_name = (
+            ena_data.get("assembly_name") or 
+            ena_data.get("name") or 
+            f"Assembly {accession.split('.')[0]}"
+        )
+        
+        assembly_level = ena_data.get("assembly_level") or ena_data.get("level") or "N/A"
+        
+        # Try different field names for statistics
+        genome_size = (
+            ena_data.get("total_length") or 
+            ena_data.get("genome_length") or 
+            ena_data.get("size") or
+            "N/A"
+        )
+        
+        contig_n50 = ena_data.get("contig_n50") or ena_data.get("n50") or "N/A"
+        number_of_contigs = ena_data.get("number_of_contigs") or ena_data.get("contig_count") or "N/A"
+        gc_percent = ena_data.get("gc_percent") or ena_data.get("gc_content") or "N/A"
+        
+        # Construct FTP path
+        ftp_path = ena_data.get("ftp_path")
+        if not ftp_path:
+            ftp_path = f"https://www.ebi.ac.uk/ena/browser/view/{accession}"
+        
+        result = {
             "database": "ena",
             "accession": accession,
             "organism": {
-                "sci_name": ena_data.get("scientific_name", "Unknown"),
-                "common_name": ena_data.get("common_name", "Unknown"),
-                "tax_id": str(ena_data.get("tax_id", "N/A"))
+                "sci_name": sci_name,
+                "common_name": common_name,
+                "tax_id": tax_id
             },
-            "assembly_name": ena_data.get("assembly_name", f"Assembly {accession.split('.')[0]}"),
-            "assembly_level": ena_data.get("assembly_level", "N/A"),
-            "submission_date": ena_data.get("first_public", "N/A"),
-            "genome_size": ena_data.get("total_length", "N/A"),
-            "contig_n50": ena_data.get("contig_n50", "N/A"),
-            "number_of_contigs": ena_data.get("number_of_contigs", "N/A"),
-            "gc_percent": ena_data.get("gc_percent", "N/A"),
-            "ftp_path": ena_data.get("ftp_path", f"https://www.ebi.ac.uk/ena/browser/view/{accession}"),
+            "assembly_name": assembly_name,
+            "assembly_level": assembly_level,
+            "submission_date": ena_data.get("first_public") or ena_data.get("submission_date") or "N/A",
+            "genome_size": genome_size,
+            "contig_n50": contig_n50,
+            "number_of_contigs": number_of_contigs,
+            "gc_percent": gc_percent,
+            "ftp_path": ftp_path,
             "additional_info": "Data from European Nucleotide Archive",
             "last_updated": datetime.utcnow().isoformat()
         }
+        
+        logger.info(f"Parsed ENA data for {accession}: {result['organism']['sci_name']}")
+        return result
+        
     except Exception as e:
-        logger.error(f"Error parsing ENA response: {str(e)}")
+        logger.error(f"Error parsing ENA response for {accession}: {str(e)}")
         return None
 
 def create_minimal_metadata(accession: str, reason: str):
@@ -677,39 +939,87 @@ async def search_ncbi(
 #         logger.error(f"Assembly search error: {str(e)}")
 #         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
-async def search_assemblies(organism: Optional[str], taxid: Optional[int], accession_ids: Optional[str], retmax: int):
-    """Search for assemblies with robust error handling"""
-    search_terms = []
-    accession_list = []
+async def direct_accession_search(accession_list: List[str], search_query: str, retmax: int):
+    """Directly fetch assemblies by accession without NCBI search"""
+    metadata = []
+    failed_accessions = []
     
-    # Build search terms - FIX ACCESSION HANDLING
-    if accession_ids:
-        accession_list = [acc.strip() for acc in accession_ids.split(",") if acc.strip()]
-        if accession_list:
-            # Use proper format for accession search
-            accession_terms = [f'"{acc}"[Accession]' for acc in accession_list]
-            search_terms.append(f"({' OR '.join(accession_terms)})")
+    # Add a safety check
+    if not accession_list:
+        return {
+            "database": "assembly",
+            "query": search_query,
+            "metadata": [],
+            "failed_accessions": [],
+            "message": "No accessions provided for direct search"
+        }
     
-    if taxid:
-        search_terms.append(f"txid{taxid}[Organism]")
+    for accession in accession_list:
+        try:
+            logger.info(f"Direct fetch for accession: {accession}")
+            assembly_data = await fetch_assembly_metadata(accession)
+            
+            # FIXED: Better condition to check if we have valid data
+            if (assembly_data and 
+                assembly_data.get("database") != "minimal" and 
+                assembly_data.get("accession") and
+                (assembly_data.get("organism", {}).get("sci_name") not in ["Unknown", None, ""] or
+                 assembly_data.get("assembly_name") not in ["Unknown", None, ""])):
+                
+                metadata.append(assembly_data)
+                logger.info(f"✅ Successfully fetched {accession}")
+            else:
+                failed_accessions.append(accession)
+                logger.warning(f"❌ Failed to fetch valid data for {accession}")
+                
+        except Exception as e:
+            logger.error(f"Error fetching assembly {accession}: {str(e)}")
+            failed_accessions.append(accession)
     
-    if organism:
-        search_terms.append(f'"{organism}"[Organism]')
+    return {
+        "database": "assembly",
+        "query": search_query,
+        "metadata": metadata,
+        "failed_accessions": failed_accessions,
+        "message": f"Direct accession search - {len(metadata)} succeeded, {len(failed_accessions)} failed"
+    }
+
+# async def direct_accession_search(accession_list: List[str], search_query: str, retmax: int):
+#     """Directly fetch assemblies by accession without NCBI search"""
+#     metadata = []
+#     failed_accessions = []
     
-    if not search_terms:
-        raise HTTPException(status_code=400, detail="Assembly search requires organism name, taxid, or accession numbers")
+#     # Add a safety check
+#     if not accession_list:
+#         return {
+#             "database": "assembly",
+#             "query": search_query,
+#             "metadata": [],
+#             "failed_accessions": [],
+#             "message": "No accessions provided for direct search"
+#         }
+
+#     for accession in accession_list:
+#         try:
+#             logger.info(f"Direct fetch for accession: {accession}")
+#             assembly_data = await fetch_assembly_metadata(accession)
+#             if assembly_data and assembly_data.get("organism", {}).get("sci_name") != "Unknown":
+#                 metadata.append(assembly_data)
+#                 logger.info(f"✅ Successfully fetched {accession}")
+#             else:
+#                 failed_accessions.append(accession)
+#                 logger.warning(f"❌ Failed to fetch {accession}")
+#         except Exception as e:
+#             logger.error(f"Error fetching assembly {accession}: {str(e)}")
+#             failed_accessions.append(accession)
     
-    # Construct final query
-    search_query = " AND ".join(search_terms).strip()
-    logger.info(f"Assembly search query: {search_query}")
-    
-    # If we're only searching by accessions, use direct fetch approach
-    if accession_list and not organism and not taxid:
-        logger.info("Direct accession search detected, using optimized approach")
-        return await direct_accession_search(accession_list, search_query, retmax)
-    
-    # Otherwise use standard NCBI search
-    return await standard_ncbi_assembly_search(search_query, retmax)
+#     return {
+#         "database": "assembly",
+#         "query": search_query,
+#         "metadata": metadata,
+#         "failed_accessions": failed_accessions,
+#         "message": f"Direct accession search - {len(metadata)} succeeded, {len(failed_accessions)} failed"
+#     }
 
 async def direct_accession_search(accession_list: List[str], search_query: str, retmax: int):
     """Directly fetch assemblies by accession without NCBI search"""
@@ -725,17 +1035,25 @@ async def direct_accession_search(accession_list: List[str], search_query: str, 
             "failed_accessions": [],
             "message": "No accessions provided for direct search"
         }
-
+    
     for accession in accession_list:
         try:
             logger.info(f"Direct fetch for accession: {accession}")
             assembly_data = await fetch_assembly_metadata(accession)
-            if assembly_data and assembly_data.get("organism", {}).get("sci_name") != "Unknown":
+            
+            # FIXED: Better condition to check if we have valid data
+            if (assembly_data and 
+                assembly_data.get("database") != "minimal" and 
+                assembly_data.get("accession") and
+                (assembly_data.get("organism", {}).get("sci_name") not in ["Unknown", None, ""] or
+                 assembly_data.get("assembly_name") not in ["Unknown", None, ""])):
+                
                 metadata.append(assembly_data)
                 logger.info(f"✅ Successfully fetched {accession}")
             else:
                 failed_accessions.append(accession)
-                logger.warning(f"❌ Failed to fetch {accession}")
+                logger.warning(f"❌ Failed to fetch valid data for {accession}")
+                
         except Exception as e:
             logger.error(f"Error fetching assembly {accession}: {str(e)}")
             failed_accessions.append(accession)
@@ -796,92 +1114,50 @@ async def standard_ncbi_assembly_search(search_query: str, retmax: int):
         raise HTTPException(status_code=500, detail=f"Assembly search failed: {str(e)}")
     
     
-# async def search_assemblies(organism: Optional[str], taxid: Optional[int], accession_ids: Optional[str], retmax: int):
-#     """Search for assemblies with robust error handling"""
-#     search_terms = []
+async def search_assemblies(organism: Optional[str], taxid: Optional[int], accession_ids: Optional[str], retmax: int):
+    """Search for assemblies with robust error handling"""
+    search_terms = []
+    accession_list = []
     
-#     # Build search terms
-#     if accession_ids:
-#         accession_list = [uid.strip() for uid in accession_ids.split(",") if uid.strip()]
-#         if accession_list:
-#             search_terms.append(f"({' OR '.join(accession_list)})[Accession]")
+    # Parse accession IDs if provided
+    if accession_ids and accession_ids.strip():
+        accession_list = [acc.strip() for acc in accession_ids.split(",") if acc.strip()]
+        if accession_list:
+            accession_terms = [f'"{acc}"[Accession]' for acc in accession_list]
+            search_terms.append(f"({' OR '.join(accession_terms)})")
     
-#     if taxid:
-#         search_terms.append(f"txid{taxid}[Organism]")
+    # Add organism filter if provided
+    if organism and organism.strip():
+        search_terms.append(f'"{organism.strip()}"[Organism]')
     
-#     if organism:
-#         search_terms.append(f'"{organism}"[Organism]')
+    # Add taxid filter if provided
+    if taxid:
+        search_terms.append(f"txid{taxid}[Organism]")
     
-#     if not search_terms:
-#         raise HTTPException(status_code=400, detail="Assembly search requires organism name, taxid, or accession numbers")
+    # Validate we have at least one search criterion
+    if not search_terms:
+        raise HTTPException(
+            status_code=400, 
+            detail="Assembly search requires organism name, taxid, or accession numbers"
+        )
     
-#     # Construct final query
-#     search_query = " AND ".join(search_terms).strip()
-#     logger.info(f"Assembly search query: {search_query}")
+    # Construct final query
+    search_query = " AND ".join(search_terms).strip()
+    logger.info(f"Assembly search query: {search_query}")
     
-#     # Try multiple approaches
-#     approaches = [
-#         {"method": "standard", "retmode": "xml"},
-#         {"method": "alternative", "retmode": "json"},
-#     ]
+    # Determine search strategy
+    has_accessions_only = bool(accession_list) and not organism and not taxid
+    has_mixed_criteria = bool(accession_list) and (organism or taxid)
     
-#     for attempt, approach in enumerate(approaches, 1):
-#         try:
-#             logger.info(f"Attempt {attempt}: {approach['method']} approach")
-#             rate_limit()
-            
-#             # Search for assembly IDs
-#             handle = Entrez.esearch(
-#                 db="assembly", 
-#                 term=search_query, 
-#                 retmax=retmax,
-#                 retmode=approach["retmode"]
-#             )
-#             search_results = Entrez.read(handle)
-#             handle.close()
-            
-#             if not search_results["IdList"]:
-#                 return {
-#                     "database": "assembly",
-#                     "query": search_query,
-#                     "metadata": [],
-#                     "failed_accessions": [],
-#                     "message": "No assemblies found"
-#                 }
-            
-#             # Fetch metadata for each assembly
-#             metadata = []
-#             failed_accessions = []
-            
-#             for uid in search_results["IdList"]:
-#                 try:
-#                     # Use the UID to fetch metadata
-#                     assembly_data = await fetch_assembly_metadata(f"UID_{uid}")
-#                     metadata.append(assembly_data)
-#                 except Exception as e:
-#                     logger.error(f"Error fetching assembly {uid}: {str(e)}")
-#                     failed_accessions.append(f"UID_{uid}")
-            
-#             return {
-#                 "database": "assembly",
-#                 "query": search_query,
-#                 "metadata": metadata,
-#                 "failed_accessions": failed_accessions,
-#             }
-            
-#         except Exception as e:
-#             logger.warning(f"Approach {attempt} failed: {str(e)}")
-#             if attempt < len(approaches):
-#                 logger.info("Retrying with next approach...")
-#                 time.sleep(2)  # Wait before retry
-#                 continue
-#             else:
-#                 # All approaches failed - try direct accession fetch as fallback
-#                 logger.info("All NCBI approaches failed, trying direct accession fallback...")
-#                 return await fallback_direct_accession_search(accession_list, search_query)
-    
-#     # Should never reach here
-#     raise HTTPException(status_code=500, detail="All search approaches failed")
+    if has_accessions_only:
+        logger.info("Direct accession search detected, using optimized approach")
+        return await direct_accession_search(accession_list, search_query, retmax)
+    elif has_mixed_criteria:
+        logger.info("Mixed criteria search, using standard NCBI search")
+        return await standard_ncbi_assembly_search(search_query, retmax)
+    else:
+        logger.info("Organism/taxid only search, using standard NCBI search")
+        return await standard_ncbi_assembly_search(search_query, retmax)
 
 async def fallback_direct_accession_search(accession_list, search_query):
     """Fallback: try to fetch each accession directly without NCBI search"""
@@ -1122,6 +1398,50 @@ async def root():
 async def test_accession(accession: str):
     """Test endpoint for debugging"""
     result = await fetch_assembly_metadata(accession)
+    return result
+
+@app.get("/debug/{accession}")
+async def debug_accession(accession: str):
+    """Debug endpoint to test accession fetching"""
+    result = {
+        "accession": accession,
+        "sources_tried": [],
+        "final_result": None
+    }
+    
+    # Test ENA
+    try:
+        ena_data = await fetch_ena_metadata(accession)
+        result["sources_tried"].append({
+            "source": "ENA",
+            "success": ena_data is not None,
+            "data": ena_data
+        })
+    except Exception as e:
+        result["sources_tried"].append({
+            "source": "ENA",
+            "success": False,
+            "error": str(e)
+        })
+    
+    # Test NCBI Assembly
+    try:
+        ncbi_data = await fetch_assembly_by_accession(accession)
+        result["sources_tried"].append({
+            "source": "NCBI Assembly",
+            "success": ncbi_data is not None,
+            "data": ncbi_data
+        })
+    except Exception as e:
+        result["sources_tried"].append({
+            "source": "NCBI Assembly",
+            "success": False,
+            "error": str(e)
+        })
+    
+    # Test final result
+    result["final_result"] = await fetch_assembly_metadata(accession)
+    
     return result
 
 if __name__ == "__main__":
