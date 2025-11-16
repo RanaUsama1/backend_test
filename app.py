@@ -680,6 +680,7 @@ async def search_ncbi(
 async def search_assemblies(organism: Optional[str], taxid: Optional[int], accession_ids: Optional[str], retmax: int):
     """Search for assemblies with robust error handling"""
     search_terms = []
+    accession_list = []
     
     # Build search terms - FIX ACCESSION HANDLING
     if accession_ids:
@@ -715,6 +716,16 @@ async def direct_accession_search(accession_list: List[str], search_query: str, 
     metadata = []
     failed_accessions = []
     
+    # Add a safety check
+    if not accession_list:
+        return {
+            "database": "assembly",
+            "query": search_query,
+            "metadata": [],
+            "failed_accessions": [],
+            "message": "No accessions provided for direct search"
+        }
+
     for accession in accession_list:
         try:
             logger.info(f"Direct fetch for accession: {accession}")
