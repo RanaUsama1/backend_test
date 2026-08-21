@@ -1,0 +1,22 @@
+node_modules/
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+*.db
+*.sqlite3
+
+# Node
+node_modules/
+dist/
+build/
+node_modules
+node_modules
+venv/
+
+# NCBI datasets
+*.jsonl
+pseudomonas_all.jsonl

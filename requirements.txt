@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+httpx
+python-dotenv
+pymongo
+biopython
+flask
+flask-cors
+slowapi
+requests
+gunicorn
+
