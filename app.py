@@ -45,18 +45,46 @@ last_request_time = 0
 MIN_REQUEST_INTERVAL = 0.35
 NCBI_API_KEY = os.getenv('NCBI_API_KEY', '')
 
+# def rate_limited_request(url, timeout=30):
+#     """Make rate-limited request to NCBI"""
+#     global last_request_time
+#     current_time = time.time()
+#     time_since_last = current_time - last_request_time
+#     if time_since_last < MIN_REQUEST_INTERVAL:
+#         time.sleep(MIN_REQUEST_INTERVAL - time_since_last)
+#     if NCBI_API_KEY and 'ncbi.nlm.nih.gov' in url:
+#         separator = '&' if '?' in url else '?'
+#         url = f"{url}{separator}api_key={NCBI_API_KEY}"
+#     last_request_time = time.time()
+#     return requests.get(url, timeout=timeout)
+
 def rate_limited_request(url, timeout=30):
-    """Make rate-limited request to NCBI"""
+    """Make a rate-limited request to NCBI with basic response validation."""
     global last_request_time
+
     current_time = time.time()
     time_since_last = current_time - last_request_time
+
     if time_since_last < MIN_REQUEST_INTERVAL:
         time.sleep(MIN_REQUEST_INTERVAL - time_since_last)
+
     if NCBI_API_KEY and 'ncbi.nlm.nih.gov' in url:
         separator = '&' if '?' in url else '?'
         url = f"{url}{separator}api_key={NCBI_API_KEY}"
+
     last_request_time = time.time()
-    return requests.get(url, timeout=timeout)
+
+    response = requests.get(
+        url,
+        timeout=timeout,
+        headers={
+            "User-Agent": "NCBI-Metadata-Search/1.0"
+        }
+    )
+
+    response.raise_for_status()
+
+    return response
 
 def detect_database_type(query):
     """Auto-detect database type from query string"""
