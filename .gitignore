@@ -20,3 +20,6 @@ venv/
 # NCBI datasets
 *.jsonl
 pseudomonas_all.jsonl
+*.gb
+*.gbk
+*.jsonl
