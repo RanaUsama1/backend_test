@@ -23,6 +23,8 @@ CORS(app)
 MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
 client = MongoClient(MONGODB_URI)
 db = client.ncbi_cache
+# TEMPORARY ERROR TESTING - REMOVE BEFORE FINAL SUBMISSION
+TEST_ERROR_MODE = os.getenv('TEST_ERROR_MODE', '').strip().upper()
 
 # Collections
 assemblies = db.assemblies
@@ -43,7 +45,7 @@ taxonomies.create_index('tax_id', unique=True)
 # Rate limiting
 last_request_time = 0
 MIN_REQUEST_INTERVAL = 0.35
-NCBI_API_KEY = os.getenv('NCBI_API_KEY', '')
+NCBI_API_KEY = os.getenv('NCBI_API_KEY', '').strip()
 
 # def rate_limited_request(url, timeout=30):
 #     """Make rate-limited request to NCBI"""
@@ -57,6 +59,30 @@ NCBI_API_KEY = os.getenv('NCBI_API_KEY', '')
 #         url = f"{url}{separator}api_key={NCBI_API_KEY}"
 #     last_request_time = time.time()
 #     return requests.get(url, timeout=timeout)
+
+def api_error(message, error_code, status_code, query=None):
+    response = {
+        'error_code': error_code,
+        'message': message
+    }
+
+    if query is not None:
+        response['query'] = query
+
+    return jsonify(response), status_code
+
+
+# TEMPORARY ERROR TESTING - REMOVE BEFORE FINAL SUBMISSION
+def trigger_test_error(error_mode, query):
+    if TEST_ERROR_MODE == error_mode:
+        if error_mode == 'E5':
+            raise requests.RequestException("Temporary NCBI failure test")
+
+        if error_mode == 'E6':
+            raise RuntimeError("Temporary backend failure test")
+
+        if error_mode == 'E7':
+            raise Exception("Temporary MongoDB failure test")
 
 def rate_limited_request(url, timeout=30):
     """Make a rate-limited request to NCBI with basic response validation."""
@@ -97,8 +123,8 @@ def detect_database_type(query):
         return 'protein'
     if re.match(r'^\d+$', query):
         return 'gene'
-    if re.match(r'^[A-Z][A-Z0-9\-]+$', query, re.IGNORECASE):
-        return 'gene'
+    # if re.match(r'^[A-Z][A-Z0-9\-]+$', query, re.IGNORECASE):
+    #     return 'gene'
     if ' ' in query:
         return 'organism'
     return 'unknown'
@@ -818,9 +844,88 @@ def fetch_and_parse_assembly(accession):
 
     return result
 
+# ==================== ERROR / VALIDATION HELPERS ====================
+
+def api_error(message, error_code, status_code, query=None):
+    response = {
+        'error_code': error_code,
+        'message': message
+    }
+
+    if query is not None:
+        response['query'] = query
+
+    return jsonify(response), status_code
+
+
+def is_valid_assembly_accession(value):
+    """Validate RefSeq/GenBank assembly accession format."""
+    return bool(
+        re.fullmatch(
+            r'GC[FA]_\d+\.\d+',
+            value.strip(),
+            re.IGNORECASE
+        )
+    )
+
+def is_valid_nucleotide_accession(value):
+    """Validate common NCBI nucleotide accession formats."""
+    return bool(
+        re.fullmatch(
+            r'(?:AC|AP|AY|BK|CP|CR|DQ|EU|FJ|FM|FN|FO|FR|HE|HQ|JF|JQ|'
+            r'JN|KC|KF|KM|KP|KX|KY|LC|LN|LR|MF|MG|MH|MK|MN|MT|MW|'
+            r'NC|NG|NM|NR|NT|NW|NZ|ON|OP|OQ|OR|OX|'
+            r'BC|BT|BU|BX|U|V|X|Y|Z|'
+            r'N[CGMRW]|[A-Z]{2})_\d+(?:\.\d+)?',
+            value.strip(),
+            re.IGNORECASE
+        )
+    )
+
+
+def is_valid_protein_accession(value):
+    """Validate common NCBI protein accession formats."""
+    return bool(
+        re.fullmatch(
+            r'(?:NP|XP|YP|WP|AP|ZP|[A-Z]{3})_\d+\.\d+',
+            value.strip(),
+            re.IGNORECASE
+        )
+    )
+
+def is_valid_gene_id(value):
+    """Validate an NCBI Gene ID."""
+    return value.strip().isdigit()
+
+def handle_database_error(query):
+    return api_error(
+        "Temporary database/cache error.",
+        "E7",
+        503,
+        query
+    )
+
+# ==================== Routes / Assembly ====================
+
 @app.route('/api/assembly/<accession>', methods=['GET'])
 def get_assembly(accession):
+    accession = accession.strip()
     """Fetch assembly data by accession"""
+    if not accession:
+        return api_error(
+            "Please enter a search query.",
+            "E1",
+            400,
+            accession
+        )
+
+    if not is_valid_assembly_accession(accession):
+        return api_error(
+            "Invalid accession or no matching record found.",
+            "E3",
+            400,
+            accession
+        )
     cached = assemblies.find_one({'accession': accession})
     if cached:
         print(f"✓ Cache HIT: assembly/{accession}")
@@ -836,10 +941,21 @@ def get_assembly(accession):
         result['_id'] = str(result.get('_id', ''))
         return jsonify(result)
 
+    # except Exception as e:
+    #     import traceback
+    #     traceback.print_exc()
+    #     return jsonify({'error': str(e), 'accession': accession}), 500
+
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e), 'accession': accession}), 500
+
+        return api_error(
+            "An unexpected server error occurred.",
+            "E4",
+            500,
+            accession
+        )
 
 
 # ==================== ORGANISM SEARCH ENDPOINT ====================
@@ -861,12 +977,19 @@ def search_by_organism(organism_name):
     try:
         assemblies_list = search_assemblies_by_organism(organism_name, max_results=20)
 
-        if not assemblies_list:
-            return jsonify({
-                'error': f'No assemblies found for organism: {organism_name}',
-                'organism_name': organism_name
-            }), 404
+        # if not assemblies_list:
+        #     return jsonify({
+        #         'error': f'No assemblies found for organism: {organism_name}',
+        #         'organism_name': organism_name
+        #     }), 404
 
+        if not assemblies_list:
+            return api_error(
+                f"No matching record found for '{organism_name}'.",
+                "E2",
+                404,
+                organism_name
+            )
         best = pick_best_assembly(assemblies_list)
         best_accession = best.get('accession')
 
@@ -918,19 +1041,52 @@ def search_by_organism(organism_name):
 
 @app.route('/api/nucleotide/<accession>', methods=['GET'])
 def get_nucleotide(accession):
+    
+    accession = accession.strip()
 
+    if not accession:
+        return api_error(
+            "Please enter a search query.",
+            "E1",
+            400,
+            accession
+        )
+
+    if not is_valid_nucleotide_accession(accession):
+        return api_error(
+            "Invalid accession or no matching record found.",
+            "E3",
+            400,
+            accession
+        )
     # =========================
     # 1. Check MongoDB first
     # =========================
 
-    cached = nucleotides.find_one({
-        'accession': accession
-    })
+    # cached = nucleotides.find_one({
+    #     'accession': accession
+    # })
 
-    if cached:
-        cached['_id'] = str(cached['_id'])
-        cached['from_cache'] = True
-        return jsonify(cached)
+    # if cached:
+    #     cached['_id'] = str(cached['_id'])
+    #     cached['from_cache'] = True
+    #     return jsonify(cached)
+
+    try:
+        cached = nucleotides.find_one({
+            'accession': accession
+        })
+
+        if cached:
+            cached['_id'] = str(cached['_id'])
+            cached['from_cache'] = True
+            return jsonify(cached)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+
+        return handle_database_error(accession)
 
     try:
 
@@ -946,9 +1102,23 @@ def get_nucleotide(accession):
             f"&retmode=json"
         )
 
-        search_resp = rate_limited_request(
-            search_url
+        # =========================
+                # Temporary ncbi error check
+                # =========================        
+
+        search_url = (
+            "https://eutils.ncbi.nlm.nih.gov/"
+            f"entrez/eutils/esearch.fcgi"
+            f"?db=nuccore"
+            f"&term={accession}"
+            f"&retmode=json"
         )
+
+        # TEMPORARY TEST - REMOVE BEFORE FINAL SUBMISSION
+        if TEST_ERROR_MODE == 'E5':
+            raise requests.RequestException("Temporary NCBI failure test")
+
+        search_resp = rate_limited_request(search_url)
 
         search_data = search_resp.json()
 
@@ -958,12 +1128,20 @@ def get_nucleotide(accession):
             .get('idlist', [])
         )
 
-        if not idlist:
+        # if not idlist:
 
-            return jsonify({
-                'error': 'Accession not found',
-                'accession': accession
-            }), 404
+        #     return jsonify({
+        #         'error': 'Accession not found',
+        #         'accession': accession
+        #     }), 404
+
+        if not idlist:
+            return api_error(
+                f"No matching record found for '{accession}'.",
+                "E4",
+                404,
+                accession
+            )
 
         uid = idlist[0]
 
@@ -1380,16 +1558,50 @@ def get_nucleotide(accession):
 
         return jsonify(result)
 
+    # except Exception as e:
+
+    #     import traceback
+
+    #     traceback.print_exc()
+
+    #     return jsonify({
+    #         'error': str(e),
+    #         'accession': accession
+    #     }), 500
+
+    except requests.RequestException as e:
+            import traceback
+            traceback.print_exc()
+
+            return api_error(
+                "Unable to retrieve data from NCBI. Please try again later.",
+                "E5",
+                502,
+                accession
+            )
+
+    except ValueError as e:
+            # Invalid JSON returned by NCBI
+            import traceback
+            traceback.print_exc()
+
+            return api_error(
+                "Unable to retrieve data from NCBI. Please try again later.",
+                "E5",
+                502,
+                accession
+            )
+
     except Exception as e:
+            import traceback
+            traceback.print_exc()
 
-        import traceback
-
-        traceback.print_exc()
-
-        return jsonify({
-            'error': str(e),
-            'accession': accession
-        }), 500
+            return api_error(
+                "An unexpected server error occurred.",
+                "E6",
+                500,
+                accession
+            )
 
 
 # ==================== GENE ====================
@@ -1398,22 +1610,56 @@ def get_nucleotide(accession):
 def get_gene_by_symbol(symbol):
     symbol = symbol.strip()
 
+    if not symbol:
+        return api_error(
+            "Please enter a search query.",
+            400,
+            symbol
+        )
+    # if not gene_id:
+    #         return api_error(
+    #             f"No matching record found for '{symbol}'.",
+    #             404,
+    #             symbol
+    #         )
+
     # =========================
     # 1. Search MongoDB first
     # =========================
 
-    cached = genes.find_one({
-        'symbol': {
-            '$regex': f'^{symbol}$',
-            '$options': 'i'
-        }
-    })
+    # cached = genes.find_one({
+    #     'symbol': {
+    #         '$regex': f'^{symbol}$',
+    #         '$options': 'i'
+    #     }
+    # })
 
-    if cached:
-        cached['_id'] = str(cached['_id'])
-        cached['from_cache'] = True
-        cached['source'] = 'mongodb'
-        return jsonify(cached)
+    # if cached:
+    #     cached['_id'] = str(cached['_id'])
+    #     cached['from_cache'] = True
+    #     cached['source'] = 'mongodb'
+    #     return jsonify(cached)
+
+    try:
+        cached = genes.find_one({
+            'symbol': {
+                '$regex': f'^{symbol}$',
+                '$options': 'i'
+            }
+        })
+
+        if cached:
+            cached['_id'] = str(cached['_id'])
+            cached['from_cache'] = True
+            cached['source'] = 'mongodb'
+            return jsonify(cached)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+
+        return handle_database_error(symbol)
+    
 
     # =========================
     # 2. NCBI fallback
@@ -1468,7 +1714,13 @@ def get_gene_by_symbol(symbol):
                 .get('result', {})
                 .get(gene_id, {})
             )
-
+        if not gene_id:
+            return api_error(
+                f"No matching record found for '{symbol}'.",
+                "E2",
+                404,
+                symbol
+            )
         result = {
             'gene_id': str(gene_id) if gene_id else None,
 
@@ -1551,19 +1803,66 @@ def get_gene_by_symbol(symbol):
 
         return jsonify(result)
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
+    except requests.RequestException as e:
+                import traceback
+                traceback.print_exc()
 
-        return jsonify({
-            'error': str(e),
-            'symbol': symbol
-        }), 500
+                return api_error(
+                    "Unable to retrieve data from NCBI. Please try again later.",
+                    "E5",
+                    502,
+                    symbol
+                )
+
+    except ValueError as e:
+                import traceback
+                traceback.print_exc()
+
+                return api_error(
+                    "Unable to retrieve data from NCBI. Please try again later.",
+                    "E5",
+                    502,
+                    symbol
+                )
+
+    except Exception as e:
+                import traceback
+                traceback.print_exc()
+
+                return api_error(
+                    "An unexpected server error occurred.",
+                    "E6",
+                    500,
+                    symbol
+                )
+
+        # return api_error(
+        #     "An unexpected server error occurred.",
+        #     "E6",
+        #     500,
+        #     symbol
+        # )
 
 @app.route('/api/gene/id/<gene_id>', methods=['GET'])
 def get_gene_by_id(gene_id):
 
     gene_id = gene_id.strip()
+
+    if not gene_id:
+        return api_error(
+            "Please enter a search query.",
+            "E1",
+            400,
+            gene_id
+        )
+
+    if not is_valid_gene_id(gene_id):
+        return api_error(
+            "Invalid accession or no matching record found.",
+            "E3",
+            400,
+            gene_id
+        )
 
     # =========================
     # 1. Search MongoDB first
@@ -1597,6 +1896,12 @@ def get_gene_by_id(gene_id):
             .get('result', {})
             .get(gene_id, {})
         )
+
+        # if not esummary_data:
+        #     return jsonify({
+        #         'error': 'Gene not found',
+        #         'gene_id': gene_id
+        #     }), 404
 
         if not esummary_data:
             return jsonify({
@@ -1688,26 +1993,92 @@ def get_gene_by_id(gene_id):
 
         return jsonify(result)
 
+    # except Exception as e:
+    #     import traceback
+    #     traceback.print_exc()
+
+    #     return jsonify({
+    #         'error': str(e),
+    #         'gene_id': gene_id
+    #     }), 500
+
+    except requests.RequestException as e:
+        import traceback
+        traceback.print_exc()
+
+        return api_error(
+            "Unable to retrieve data from NCBI. Please try again later.",
+            "E5",
+            502,
+            gene_id
+        )
+
+    except ValueError as e:
+        import traceback
+        traceback.print_exc()
+
+        return api_error(
+            "Unable to retrieve data from NCBI. Please try again later.",
+            "E5",
+            502,
+            gene_id
+        )
+
     except Exception as e:
         import traceback
         traceback.print_exc()
 
-        return jsonify({
-            'error': str(e),
-            'gene_id': gene_id
-        }), 500
+        return api_error(
+            "An unexpected server error occurred.",
+            "E6",
+            500,
+            gene_id
+        )
 
 
 # ==================== PROTEIN ====================
 
 @app.route('/api/protein/<accession>', methods=['GET'])
 def get_protein(accession):
-    cached = proteins.find_one({'accession': accession})
+    accession = accession.strip()
 
-    if cached:
-        cached['_id'] = str(cached['_id'])
-        cached['from_cache'] = True
-        return jsonify(cached)
+    if not accession:
+        return api_error(
+            "Please enter a search query.",
+            "E1",
+            400,
+            accession
+        )
+
+    if not is_valid_protein_accession(accession):
+        return api_error(
+            "Invalid accession or no matching record found.",
+            "E3",
+            400,
+            accession
+        )
+    # cached = proteins.find_one({'accession': accession})
+
+    # if cached:
+    #     cached['_id'] = str(cached['_id'])
+    #     cached['from_cache'] = True
+    #     return jsonify(cached)
+
+    try:
+        cached = proteins.find_one({
+            'accession': accession
+        })
+
+        if cached:
+            cached['_id'] = str(cached['_id'])
+            cached['from_cache'] = True
+            return jsonify(cached)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+
+        return handle_database_error(accession)
 
     try:
         search_url = (
@@ -1718,11 +2089,19 @@ def get_protein(accession):
         search_resp = rate_limited_request(search_url)
         search_data = search_resp.json()
 
+        # if not search_data.get('esearchresult', {}).get('idlist'):
+        #     return jsonify({
+        #         'error': 'Protein not found',
+        #         'accession': accession
+        #     }), 404
+
         if not search_data.get('esearchresult', {}).get('idlist'):
-            return jsonify({
-                'error': 'Protein not found',
-                'accession': accession
-            }), 404
+            return api_error(
+                f"No matching record found for '{accession}'.",
+                "E2",
+                404,
+                accession
+            )
 
         uid = search_data['esearchresult']['idlist'][0]
 
@@ -1804,28 +2183,78 @@ def get_protein(accession):
 
         return jsonify(result)
 
-    except Exception as e:
+    # except Exception as e:
 
+    #     import traceback
+    #     traceback.print_exc()
+
+    #     return jsonify({
+    #         'error': str(e),
+    #         'accession': accession
+    #     }), 500
+
+    except requests.RequestException as e:
         import traceback
         traceback.print_exc()
 
-        return jsonify({
-            'error': str(e),
-            'accession': accession
-        }), 500
+        return api_error(
+            "Unable to retrieve data from NCBI. Please try again later.",
+            "E5",
+            502,
+            accession
+        )
+
+    except ValueError as e:
+        import traceback
+        traceback.print_exc()
+
+        return api_error(
+            "Unable to retrieve data from NCBI. Please try again later.",
+            "E5",
+            502,
+            accession
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+
+        return api_error(
+            "An unexpected server error occurred.",
+            "E6",
+            500,
+            accession
+        )
+
 
 # ==================== TAXONOMY ====================
 @app.route('/api/taxonomy/<name_or_id>', methods=['GET'])
 def get_taxonomy(name_or_id):
 
-    cached = taxonomies.find_one({
-        'query': name_or_id
-    })
+    # cached = taxonomies.find_one({
+    #     'query': name_or_id
+    # })
 
-    if cached:
-        cached['_id'] = str(cached['_id'])
-        cached['from_cache'] = True
-        return jsonify(cached)
+    # if cached:
+    #     cached['_id'] = str(cached['_id'])
+    #     cached['from_cache'] = True
+    #     return jsonify(cached)
+
+    try:
+        cached = taxonomies.find_one({
+            'query': name_or_id
+        })
+
+        if cached:
+            cached['_id'] = str(cached['_id'])
+            cached['from_cache'] = True
+            return jsonify(cached)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+
+        return handle_database_error(name_or_id)
 
     try:
 
@@ -1855,11 +2284,19 @@ def get_taxonomy(name_or_id):
             .get('idlist', [])
         )
 
+        # if not id_list:
+        #     return jsonify({
+        #         'error': 'Taxonomy not found',
+        #         'query': name_or_id
+        #     }), 404
+
         if not id_list:
-            return jsonify({
-                'error': 'Taxonomy not found',
-                'query': name_or_id
-            }), 404
+            return api_error(
+                f"No matching record found for '{name_or_id}'.",
+                "E4",
+                404,
+                name_or_id
+            )
 
         tax_id = id_list[0]
 
@@ -1877,21 +2314,61 @@ def get_taxonomy(name_or_id):
 
         fetch_resp = rate_limited_request(fetch_url)
 
-        if not fetch_resp.ok:
-            return jsonify({
-                'error': 'Failed to fetch taxonomy data',
-                'query': name_or_id
-            }), 502
+        # if not fetch_resp.ok:
+        #     return jsonify({
+        #         'error': 'Failed to fetch taxonomy data',
+        #         'query': name_or_id
+        #     }), 502
 
+        if not fetch_resp.ok:
+            return api_error(
+                "Unable to retrieve data from NCBI. Please try again later.",
+                "E5",
+                502,
+                name_or_id
+            )
         root = ET.fromstring(fetch_resp.text)
 
         taxon = root.find('.//Taxon')
 
-        if taxon is None:
-            return jsonify({
-                'error': 'Taxonomy record not found',
-                'query': name_or_id
-            }), 404
+        # if taxon is None:
+        #     return jsonify({
+        #         'error': 'Taxonomy record not found',
+        #         'query': name_or_id
+        #     }), 404
+
+    except requests.RequestException as e:
+        import traceback
+        traceback.print_exc()
+
+        return api_error(
+            "Unable to retrieve data from NCBI. Please try again later.",
+            "E5",
+            502,
+            name_or_id
+        )
+
+    except ValueError as e:
+        import traceback
+        traceback.print_exc()
+
+        return api_error(
+            "Unable to retrieve data from NCBI. Please try again later.",
+            "E5",
+            502,
+            name_or_id
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+
+        return api_error(
+            "An unexpected server error occurred.",
+            "E6",
+            500,
+            name_or_id
+        )
 
         # ====================================================
         # Helper
@@ -2175,6 +2652,7 @@ def get_taxonomy(name_or_id):
             'query': name_or_id
         }), 500
 
+  
 # ==================== SMART SEARCH ====================
 
 @app.route('/api/search', methods=['POST'])
@@ -2304,6 +2782,18 @@ def detect_db(query):
         'query': query,
         'detected_database': detect_database_type(query)
     })
+
+def api_error(message, error_code, status_code, query=None):
+    response = {
+        "error_code": error_code,
+        "message": message,
+    }
+
+    if query is not None:
+        response["query"] = query
+
+    return jsonify(response), status_code
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
