@@ -13,6 +13,10 @@
 # from io import StringIO
 # from io import BytesIO
 # from metadata_archive import metadata_get, register_metadata_download
+# from ncbi_assembly_parser import parse_datasets_api
+# from assembly_normalization import finalize_assembly
+
+# ASSEMBLY_CACHE_SCHEMA_VERSION = 2
 
 # load_dotenv()
 
@@ -221,88 +225,6 @@
 
 # # ==================== DATASETS API PARSER ====================
 
-# def parse_datasets_api(datasets_data):
-#     """Parse NCBI Datasets API v2 response"""
-#     parsed = {}
-#     if not datasets_data or 'reports' not in datasets_data:
-#         return parsed
-
-#     reports = datasets_data.get('reports', [])
-#     if not reports:
-#         return parsed
-
-#     report = reports[0]
-
-#     organism = report.get('organism', {})
-#     parsed['organism_name'] = organism.get('sciName') or organism.get('organismName')
-#     parsed['common_name'] = organism.get('commonName')
-#     parsed['tax_id'] = organism.get('taxId')
-
-#     assembly_info = report.get('assemblyInfo', {})
-#     parsed['assembly_level'] = assembly_info.get('assemblyLevel')
-#     parsed['assembly_status'] = assembly_info.get('assemblyStatus')
-#     parsed['assembly_name'] = assembly_info.get('assemblyName')
-#     parsed['assembly_type'] = assembly_info.get('assemblyType')
-#     parsed['description'] = assembly_info.get('description')
-#     parsed['submitter'] = assembly_info.get('submitter')
-#     parsed['submission_date'] = assembly_info.get('submissionDate')
-#     parsed['release_date'] = assembly_info.get('releaseDate')
-#     parsed['assembly_method'] = assembly_info.get('assemblyMethod')
-#     parsed['sequencing_technology'] = assembly_info.get('sequencingTechnology')
-#     parsed['refseq_category'] = assembly_info.get('refseqCategory')
-#     parsed['biosample_accession'] = assembly_info.get('biosampleAccession')
-#     parsed['bioproject_accession'] = assembly_info.get('bioprojectAccession')
-#     parsed['strain'] = assembly_info.get('infraspecificNames', {}).get('strain')
-#     parsed['isolate'] = assembly_info.get('infraspecificNames', {}).get('isolate')
-#     parsed['expected_final_version'] = assembly_info.get('expectedFinalVersion')
-#     parsed['synonym'] = assembly_info.get('synonym')
-
-#     assembly_stats = report.get('assemblyStats', {})
-#     parsed['genome_size_bp'] = assembly_stats.get('totalSequenceLength')
-#     if parsed['genome_size_bp']:
-#         parsed['genome_size_mb'] = round(parsed['genome_size_bp'] / 1_000_000, 2)
-#     parsed['genome_size_ungapped'] = assembly_stats.get('totalUngappedLength')
-#     parsed['gc_content'] = assembly_stats.get('gcPercent')
-#     parsed['gc_count'] = assembly_stats.get('gcCount')
-#     parsed['atgc_count'] = assembly_stats.get('atgcCount')
-#     parsed['genome_coverage'] = assembly_stats.get('genomeCoverage')
-#     parsed['number_of_chromosomes'] = assembly_stats.get('totalNumberOfChromosomes')
-#     parsed['contig_n50'] = assembly_stats.get('contigN50')
-#     parsed['contig_l50'] = assembly_stats.get('contigL50')
-#     parsed['number_of_contigs'] = assembly_stats.get('numberOfContigs')
-#     parsed['scaffold_n50'] = assembly_stats.get('scaffoldN50')
-#     parsed['scaffold_l50'] = assembly_stats.get('scaffoldL50')
-#     parsed['number_of_scaffolds'] = assembly_stats.get('numberOfScaffolds')
-#     parsed['gaps_between_scaffolds'] = assembly_stats.get('gapsBetweenScaffoldsCount')
-#     parsed['number_of_component_sequences'] = assembly_stats.get('numberOfComponentSequences')
-#     parsed['number_of_organelles'] = assembly_stats.get('numberOfOrganelles')
-
-#     annotation = report.get('annotationInfo', {})
-#     parsed['annotation_provider'] = annotation.get('provider')
-#     parsed['annotation_date'] = annotation.get('releaseDate')
-#     parsed['annotation_name'] = annotation.get('name')
-#     parsed['annotation_method'] = annotation.get('method')
-#     parsed['annotation_pipeline'] = annotation.get('pipeline')
-#     parsed['annotation_software_version'] = annotation.get('softwareVersion')
-#     parsed['annotation_status'] = annotation.get('status')
-
-#     gene_counts = annotation.get('stats', {}).get('geneCounts', {})
-#     parsed['total_genes'] = gene_counts.get('total')
-#     parsed['protein_coding_genes'] = gene_counts.get('proteinCoding')
-#     parsed['non_coding_genes'] = gene_counts.get('nonCoding')
-#     parsed['pseudogenes'] = gene_counts.get('pseudogene')
-#     parsed['other_genes'] = gene_counts.get('other')
-
-#     wgs = report.get('wgsInfo', {})
-#     parsed['wgs_project'] = wgs.get('wgsProjectAccession')
-
-#     paired = report.get('pairedAssembly', {})
-#     parsed['paired_accession'] = paired.get('accession')
-
-#     parsed['current_accession'] = report.get('currentAccession')
-#     parsed['source_database'] = report.get('sourceDatabase')
-
-#     return parsed
 
 # # ==================== ENA FETCHER ====================
 
@@ -409,7 +331,7 @@
 #                             biosample_info['title'] = elem.text
 #                     elif tag == 'Description':
 #                         # Look for Paragraph inside Description
-#                         for child in elem:
+#                         for child in elem.iter():
 #                             child_tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
 #                             if child_tag == 'Paragraph' and child.text:
 #                                 biosample_info['description'] = child.text
@@ -550,6 +472,9 @@
 # def fetch_and_parse_assembly(accession):
 #     """Core function to fetch and parse assembly data from all sources"""
 
+#     accession = accession.strip().upper()
+#     normalization_warnings = []
+
 #     # SOURCE 1: NCBI Datasets API v2
 #     datasets_data = None
 #     datasets_parsed = {}
@@ -558,10 +483,11 @@
 #         datasets_resp = rate_limited_request(datasets_url)
 #         if datasets_resp.ok:
 #             datasets_data = datasets_resp.json()
-#             datasets_parsed = parse_datasets_api(datasets_data)
+#             datasets_parsed = parse_datasets_api(datasets_data, expected_accession=accession)
 #             print(f"  Datasets API: {len(datasets_parsed)} fields parsed")
 #     except Exception as e:
-#         print(f"  Datasets API error: {e}")
+#         normalization_warnings.append({"source": "datasets", "error_type": type(e).__name__})
+#         print(f"  Datasets API error: {type(e).__name__}")
 
 #     # SOURCE 2: NCBI ESummary
 #     esummary_data = None
@@ -579,12 +505,16 @@
 #             summary_resp = rate_limited_request(summary_url)
 #             esummary_data = summary_resp.json().get('result', {}).get(assembly_id, {})
 
+#             if esummary_data.get('assemblyaccession') != accession:
+#                 esummary_data = None
+#                 raise ValueError('ESummary assembly accession mismatch')
 #             meta_xml = esummary_data.get('meta', '')
 #             meta_stats = parse_meta_xml(meta_xml)
 #             ftp_stats_url = esummary_data.get('ftppath_stats_rpt')
 #             print(f"  ESummary: ID={assembly_id}, meta has {len(meta_stats)} stats")
 #     except Exception as e:
-#         print(f"  ESummary error: {e}")
+#         normalization_warnings.append({"source": "esummary", "error_type": type(e).__name__})
+#         print(f"  ESummary error: {type(e).__name__}")
 
 #     # SOURCE 3: NCBI FTP Stats File
 #     ftp_stats = {}
@@ -596,7 +526,12 @@
 #         print(f"  FTP stats error: {e}")
 
 #     # SOURCE 4: ENA
-#     ena_data = fetch_ena_assembly(accession)
+#     paired_accession = datasets_parsed.get('paired_accession')
+#     if not paired_accession and esummary_data:
+#         paired_accession = (esummary_data.get('synonym') or {}).get('genbank')
+#     ena_accession = accession if accession.startswith('GCA_') else paired_accession
+#     ena_data = (fetch_ena_assembly(ena_accession)
+#                 if ena_accession and re.fullmatch(r'GCA_\d+\.\d+', ena_accession) else None)
 #     if ena_data:
 #         print(f"  ENA: {len(ena_data)} fields parsed")
 
@@ -647,9 +582,7 @@
 #         all_summary.get('atgc_count')
 #     )
 
-#     if gc_content is None and gc_count and genome_size:
-#         gc_content = round((gc_count / genome_size) * 100, 2)
-#     elif gc_content is None and gc_count and atgc_count:
+#     if gc_content is None and gc_count is not None and atgc_count:
 #         gc_content = round((gc_count / atgc_count) * 100, 2)
 
 #     coverage = get_value(
@@ -757,7 +690,6 @@
 #         ),
 #         'assembly_level': get_value(
 #             datasets_parsed.get('assembly_level'),
-#             datasets_parsed.get('assembly_status'),
 #             esummary_data.get('assemblystatus') if esummary_data else None
 #         ),
 #         'assembly_type': get_value(
@@ -843,7 +775,9 @@
 #         'from_cache': False
 #     }
 
-#     return result
+#     return finalize_assembly(
+#         result, datasets_parsed, esummary_data, ftp_stats, normalization_warnings,
+#         ASSEMBLY_CACHE_SCHEMA_VERSION, ena_accession)
 
 # # ==================== ERROR / VALIDATION HELPERS ====================
 
@@ -910,7 +844,7 @@
 
 # @app.route('/api/assembly/<accession>', methods=['GET'])
 # def get_assembly(accession):
-#     accession = accession.strip()
+#     accession = accession.strip().upper()
 #     """Fetch assembly data by accession"""
 #     if not accession:
 #         return api_error(
@@ -927,7 +861,9 @@
 #             400,
 #             accession
 #         )
-#     cached = assemblies.find_one({'accession': accession})
+#     cached = assemblies.find_one({'accession': accession,
+#                                   'cache_schema_version': ASSEMBLY_CACHE_SCHEMA_VERSION,
+#                                   'cache_eligible': True})
 #     if cached:
 #         print(f"✓ Cache HIT: assembly/{accession}")
 #         cached['_id'] = str(cached['_id'])
@@ -938,7 +874,8 @@
 
 #     try:
 #         result = fetch_and_parse_assembly(accession)
-#         assemblies.insert_one(result.copy())
+#         if result.get('cache_eligible'):
+#             assemblies.replace_one({'accession': accession}, result.copy(), upsert=True)
 #         result['_id'] = str(result.get('_id', ''))
 #         return jsonify(result)
 
@@ -966,7 +903,9 @@
 #     """Search for assemblies by organism name"""
 #     organism_name = organism_name.replace('%20', ' ')
 
-#     cached = organism_searches.find_one({'organism_name': organism_name})
+#     cached = organism_searches.find_one({'organism_name': organism_name,
+#                                          'cache_schema_version': ASSEMBLY_CACHE_SCHEMA_VERSION,
+#                                          'assembly_data.cache_eligible': True})
 #     if cached:
 #         print(f"✓ Cache HIT: organism/{organism_name}")
 #         cached['_id'] = str(cached['_id'])
@@ -1029,7 +968,9 @@
 #             'from_cache': False
 #         }
 
-#         organism_searches.insert_one(result.copy())
+#         result['cache_schema_version'] = ASSEMBLY_CACHE_SCHEMA_VERSION
+#         if full_data.get('cache_eligible'):
+#             organism_searches.replace_one({'organism_name': organism_name}, result.copy(), upsert=True)
 #         result['_id'] = str(result.get('_id', ''))
 #         return jsonify(result)
 
@@ -2816,6 +2757,7 @@ from Bio import SeqIO
 from io import StringIO
 from io import BytesIO
 from metadata_archive import metadata_get, register_metadata_download
+from gene_service import register_gene_routes
 from ncbi_assembly_parser import parse_datasets_api
 from assembly_normalization import finalize_assembly
 
@@ -3783,6 +3725,7 @@ def search_by_organism(organism_name):
         return jsonify({'error': str(e), 'organism_name': organism_name}), 500
 
 register_metadata_download(app, fetch_and_parse_assembly)
+get_gene_by_id, get_gene_by_symbol = register_gene_routes(app)
 
 
 @app.route('/api/nucleotide/<accession>', methods=['GET'])
@@ -4352,235 +4295,6 @@ def get_nucleotide(accession):
 
 # ==================== GENE ====================
 
-@app.route('/api/gene/symbol/<symbol>', methods=['GET'])
-def get_gene_by_symbol(symbol):
-    symbol = symbol.strip()
-
-    if not symbol:
-        return api_error(
-            "Please enter a search query.",
-            400,
-            symbol
-        )
-    # if not gene_id:
-    #         return api_error(
-    #             f"No matching record found for '{symbol}'.",
-    #             404,
-    #             symbol
-    #         )
-
-    # =========================
-    # 1. Search MongoDB first
-    # =========================
-
-    # cached = genes.find_one({
-    #     'symbol': {
-    #         '$regex': f'^{symbol}$',
-    #         '$options': 'i'
-    #     }
-    # })
-
-    # if cached:
-    #     cached['_id'] = str(cached['_id'])
-    #     cached['from_cache'] = True
-    #     cached['source'] = 'mongodb'
-    #     return jsonify(cached)
-
-    try:
-        cached = genes.find_one({
-            'symbol': {
-                '$regex': f'^{symbol}$',
-                '$options': 'i'
-            }
-        })
-
-        if cached:
-            cached['_id'] = str(cached['_id'])
-            cached['from_cache'] = True
-            cached['source'] = 'mongodb'
-            return jsonify(cached)
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-
-        return handle_database_error(symbol)
-    
-
-    # =========================
-    # 2. NCBI fallback
-    # =========================
-
-    organism = request.args.get('organism', 'human')
-
-    try:
-        datasets_url = (
-            f"https://api.ncbi.nlm.nih.gov/datasets/v2/"
-            f"gene/symbol/{symbol}/taxon/{organism}/dataset_report"
-        )
-
-        datasets_resp = rate_limited_request(datasets_url)
-
-        datasets_data = (
-            datasets_resp.json()
-            if datasets_resp.ok
-            else None
-        )
-
-        search_term = (
-            f"{symbol}[Gene Name] AND "
-            f"{organism}[Organism]"
-        )
-
-        search_url = (
-            "https://eutils.ncbi.nlm.nih.gov/"
-            "entrez/eutils/esearch.fcgi"
-            f"?db=gene&term={search_term}&retmode=json"
-        )
-
-        search_resp = rate_limited_request(search_url)
-        search_data = search_resp.json()
-
-        gene_id = None
-        esummary_data = None
-
-        if search_data.get('esearchresult', {}).get('idlist'):
-            gene_id = search_data['esearchresult']['idlist'][0]
-
-            summary_url = (
-                "https://eutils.ncbi.nlm.nih.gov/"
-                "entrez/eutils/esummary.fcgi"
-                f"?db=gene&id={gene_id}&retmode=json"
-            )
-
-            summary_resp = rate_limited_request(summary_url)
-
-            esummary_data = (
-                summary_resp.json()
-                .get('result', {})
-                .get(gene_id, {})
-            )
-        if not gene_id:
-            return api_error(
-                f"No matching record found for '{symbol}'.",
-                "E2",
-                404,
-                symbol
-            )
-        result = {
-            'gene_id': str(gene_id) if gene_id else None,
-
-            'symbol': (
-                esummary_data.get('name')
-                if esummary_data
-                else symbol
-            ),
-
-            'description': (
-                esummary_data.get('description')
-                if esummary_data
-                else None
-            ),
-
-            'organism': {
-                'scientific_name': organism,
-                'common_name': None,
-                'tax_id': None
-            },
-
-            'gene_type': (
-                esummary_data.get('type')
-                if esummary_data
-                else None
-            ),
-
-            'chromosomes': [],
-
-            'nomenclature_authority': None,
-            'swissprot_accessions': [],
-            'ensembl_gene_ids': (
-                [esummary_data.get('ensemblgeneid')]
-                if esummary_data and esummary_data.get('ensemblgeneid')
-                else []
-            ),
-            'omim_ids': (
-                [esummary_data.get('mim')]
-                if esummary_data and esummary_data.get('mim')
-                else []
-            ),
-
-            'synonyms': (
-                esummary_data.get('otheraliases', '').split(', ')
-                if esummary_data and esummary_data.get('otheraliases')
-                else []
-            ),
-
-            'reference_standards': [],
-            'annotations': [],
-
-            'transcript_count': 0,
-            'protein_count': 0,
-            'transcript_type_counts': [],
-
-            'gene_groups': [],
-
-            'summary': (
-                esummary_data.get('summary')
-                if esummary_data
-                else []
-            ),
-
-            'gene_ontology': None,
-            'map_locations': [],
-            'alternate_names': [],
-
-            'from_cache': False,
-            'source': 'ncbi',
-            'fetched_at': datetime.utcnow().isoformat()
-        }
-
-        # Only cache if we actually found a GeneID
-        if gene_id:
-            genes.update_one(
-                {'gene_id': str(gene_id)},
-                {'$set': result},
-                upsert=True
-            )
-
-        return jsonify(result)
-
-    except requests.RequestException as e:
-                import traceback
-                traceback.print_exc()
-
-                return api_error(
-                    "Unable to retrieve data from NCBI. Please try again later.",
-                    "E5",
-                    502,
-                    symbol
-                )
-
-    except ValueError as e:
-                import traceback
-                traceback.print_exc()
-
-                return api_error(
-                    "Unable to retrieve data from NCBI. Please try again later.",
-                    "E5",
-                    502,
-                    symbol
-                )
-
-    except Exception as e:
-                import traceback
-                traceback.print_exc()
-
-                return api_error(
-                    "An unexpected server error occurred.",
-                    "E6",
-                    500,
-                    symbol
-                )
 
         # return api_error(
         #     "An unexpected server error occurred.",
@@ -4589,197 +4303,6 @@ def get_gene_by_symbol(symbol):
         #     symbol
         # )
 
-@app.route('/api/gene/id/<gene_id>', methods=['GET'])
-def get_gene_by_id(gene_id):
-
-    gene_id = gene_id.strip()
-
-    if not gene_id:
-        return api_error(
-            "Please enter a search query.",
-            "E1",
-            400,
-            gene_id
-        )
-
-    if not is_valid_gene_id(gene_id):
-        return api_error(
-            "Invalid accession or no matching record found.",
-            "E3",
-            400,
-            gene_id
-        )
-
-    # =========================
-    # 1. Search MongoDB first
-    # =========================
-
-    cached = genes.find_one({
-        'gene_id': gene_id
-    })
-
-    if cached:
-        cached['_id'] = str(cached['_id'])
-        cached['from_cache'] = True
-        cached['source'] = 'mongodb'
-        return jsonify(cached)
-
-    # =========================
-    # 2. NCBI fallback
-    # =========================
-
-    try:
-        summary_url = (
-            "https://eutils.ncbi.nlm.nih.gov/"
-            "entrez/eutils/esummary.fcgi"
-            f"?db=gene&id={gene_id}&retmode=json"
-        )
-
-        summary_resp = rate_limited_request(summary_url)
-
-        esummary_data = (
-            summary_resp.json()
-            .get('result', {})
-            .get(gene_id, {})
-        )
-
-        # if not esummary_data:
-        #     return jsonify({
-        #         'error': 'Gene not found',
-        #         'gene_id': gene_id
-        #     }), 404
-
-        if not esummary_data:
-            return jsonify({
-                'error': 'Gene not found',
-                'gene_id': gene_id
-            }), 404
-
-        result = {
-            'gene_id': gene_id,
-
-            'symbol': esummary_data.get('name'),
-
-            'description': (
-                esummary_data.get('description')
-            ),
-
-            'organism': {
-                'scientific_name': (
-                    esummary_data.get('organism', {}).get('scientificname')
-                    if isinstance(
-                        esummary_data.get('organism'),
-                        dict
-                    )
-                    else None
-                ),
-                'common_name': None,
-                'tax_id': str(
-                    esummary_data.get('taxid')
-                    or ''
-                )
-            },
-
-            'gene_type': esummary_data.get('type'),
-
-            'chromosomes': [],
-
-            'nomenclature_authority': None,
-            'swissprot_accessions': [],
-            'ensembl_gene_ids': (
-                [esummary_data.get('ensemblgeneid')]
-                if esummary_data.get('ensemblgeneid')
-                else []
-            ),
-
-            'omim_ids': (
-                [esummary_data.get('mim')]
-                if esummary_data.get('mim')
-                else []
-            ),
-
-            'synonyms': (
-                esummary_data.get(
-                    'otheraliases',
-                    ''
-                ).split(', ')
-                if esummary_data.get('otheraliases')
-                else []
-            ),
-
-            'reference_standards': [],
-            'annotations': [],
-
-            'transcript_count': 0,
-            'protein_count': 0,
-            'transcript_type_counts': [],
-
-            'gene_groups': [],
-
-            'summary': (
-                [esummary_data.get('summary')]
-                if esummary_data.get('summary')
-                else []
-            ),
-
-            'gene_ontology': None,
-            'map_locations': [],
-            'alternate_names': [],
-
-            'from_cache': False,
-            'source': 'ncbi',
-            'fetched_at': datetime.utcnow().isoformat()
-        }
-
-        genes.update_one(
-            {'gene_id': gene_id},
-            {'$set': result},
-            upsert=True
-        )
-
-        return jsonify(result)
-
-    # except Exception as e:
-    #     import traceback
-    #     traceback.print_exc()
-
-    #     return jsonify({
-    #         'error': str(e),
-    #         'gene_id': gene_id
-    #     }), 500
-
-    except requests.RequestException as e:
-        import traceback
-        traceback.print_exc()
-
-        return api_error(
-            "Unable to retrieve data from NCBI. Please try again later.",
-            "E5",
-            502,
-            gene_id
-        )
-
-    except ValueError as e:
-        import traceback
-        traceback.print_exc()
-
-        return api_error(
-            "Unable to retrieve data from NCBI. Please try again later.",
-            "E5",
-            502,
-            gene_id
-        )
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-
-        return api_error(
-            "An unexpected server error occurred.",
-            "E6",
-            500,
-            gene_id
-        )
 
 
 # ==================== PROTEIN ====================
@@ -5543,5 +5066,3 @@ def api_error(message, error_code, status_code, query=None):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
-
-
