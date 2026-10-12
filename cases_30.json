@@ -1,0 +1,152 @@
+[
+  {
+    "query": "9606",
+    "tax_id": "9606",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "562",
+    "tax_id": "562",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "287",
+    "tax_id": "287",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "1454220",
+    "tax_id": "1454220",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "2",
+    "tax_id": "2",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "1",
+    "tax_id": "1",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "4577",
+    "tax_id": "4577",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "4932",
+    "tax_id": "4932",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "2157",
+    "tax_id": "2157",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "10239",
+    "tax_id": "10239",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "10090",
+    "tax_id": "10090",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "10116",
+    "tax_id": "10116",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "7955",
+    "tax_id": "7955",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "7227",
+    "tax_id": "7227",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "6239",
+    "tax_id": "6239",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "3702",
+    "tax_id": "3702",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "4530",
+    "tax_id": "4530",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "4081",
+    "tax_id": "4081",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "4896",
+    "tax_id": "4896",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "5476",
+    "tax_id": "5476",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "1423",
+    "tax_id": "1423",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "1280",
+    "tax_id": "1280",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "1773",
+    "tax_id": "1773",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "2242",
+    "tax_id": "2242",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "561",
+    "tax_id": "561",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "9605",
+    "tax_id": "9605",
+    "group": "numeric TaxID coverage candidate"
+  },
+  {
+    "query": "Homo sapiens[Scientific Name]",
+    "tax_id": "9606",
+    "group": "scientific name regression"
+  },
+  {
+    "query": "Escherichia coli[Scientific Name]",
+    "tax_id": "562",
+    "group": "bacterial name lookup"
+  },
+  {
+    "query": "9606[TaxID] OR 562[TaxID]",
+    "expected": "ambiguous",
+    "group": "deliberately multiple matches"
+  },
+  {
+    "query": "codex_nonexistent_taxon_7f932a",
+    "expected": "not_found",
+    "group": "zero matches regression"
+  }
+]

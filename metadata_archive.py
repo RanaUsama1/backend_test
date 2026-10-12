@@ -102,6 +102,20 @@ def build_archive(accession, fetcher):
                 extension = 'json' if 'json' in content_type else ('xml' if 'xml' in content_type else 'txt')
                 path = f'sources/{index:03d}.{extension}'
                 record['file'] = path
+                record['content_validation'] = 'not_checked'
+                if '/dataset_report' in record.get('url', ''):
+                    try:
+                        payload = json.loads(body)
+                        reports = payload.get('reports') if isinstance(payload, dict) else None
+                        if not reports:
+                            record['content_validation'] = 'empty_or_missing_assembly_report'
+                        elif len(reports) == 1 and reports[0].get('accession') == accession:
+                            record['content_validation'] = 'assembly_identity_matched'
+                        else:
+                            record['content_validation'] = 'assembly_identity_mismatch'
+                    except (ValueError, TypeError, AttributeError):
+                        record['content_validation'] = 'invalid_assembly_report'
+
                 archive.writestr(path, body)
                 readable = body.decode('utf-8', errors='replace')
                 try:
@@ -110,10 +124,14 @@ def build_archive(accession, fetcher):
                     pass
                 sections.append('<details><summary>' + escape(path) + ' — HTTP ' +
                                 str(record['http_status']) + '</summary><p>' +
-                                escape(record['url']) + '</p><pre>' + escape(readable) + '</pre></details>')
+                                escape(record['url']) + '</p><p><a href="' + escape(path, quote=True) + '">Open original source file</a></p><pre>' + escape(readable) + '</pre></details>')
             manifest['sources'].append(record)
         manifest['captured_response_count'] = sum(body is not None for _, body in entries)
         manifest['http_success_count'] = sum(bool(r.get('http_success')) for r, _ in entries)
+        manifest['source_content_issues'] = [r['file'] for r in manifest['sources'] if r.get('content_validation') not in (None, 'not_checked', 'assembly_identity_matched')]
+        manifest['normalization_warnings'] = (normalized or {}).get('normalization_warnings', []) if isinstance(normalized, dict) else []
+        manifest['statistics_warnings'] = (normalized or {}).get('statistics_warnings', []) if isinstance(normalized, dict) else []
+        manifest['retrieval_status'] = 'partial' if manifest['normalization_warnings'] or manifest['source_content_issues'] or status == 'failed' or any(not r.get('http_success') for r in manifest['sources']) else 'captured_not_fully_validated'
         manifest_bytes = json.dumps(manifest, indent=2, ensure_ascii=False).encode('utf-8')
         archive.writestr('manifest.json', manifest_bytes)
         html = ('<!doctype html><html lang="en"><meta charset="utf-8">'
