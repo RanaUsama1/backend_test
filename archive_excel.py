@@ -25,13 +25,13 @@ def flatten(value, path='', depth=0):
         yield path,kind,json.dumps(value,ensure_ascii=True,allow_nan=False)
 
 
-def build_archive_workbook(normalized, manifest, entries):
+def build_archive_workbook(normalized, manifest, entries, database="assembly"):
     if not _gate.acquire(False):raise ValueError('excel_generation_busy')
-    try:return _build(normalized,manifest,entries)
+    try:return _build(normalized,manifest,entries,database)
     finally:_gate.release()
 
 
-def _build(normalized,manifest,entries):
+def _build(normalized,manifest,entries,database):
     payload=json.dumps(normalized,ensure_ascii=True,allow_nan=False)
     if len(payload.encode()) + sum(len(b) for _,b in entries if b is not None)>MAX_BYTES:
         raise ValueError('excel_input_limit_4_MiB')
@@ -50,15 +50,22 @@ def _build(normalized,manifest,entries):
             for i,c in enumerate(chunks,1):yield json.dumps(path,ensure_ascii=True),kind,i,len(chunks),c
     headings=['Path JSON','Type','Part','Parts','Value JSON']
     d=normalized if isinstance(normalized,dict) else {}
-    summary=[('Accession',manifest['accession']),('Organism',d.get('organism_name')),('Assembly',d.get('assembly_name')),
+    summary=[('Accession',manifest.get('accession', d.get('tax_id', 'diagnostic'))),('Organism',d.get('organism_name')),('Assembly',d.get('assembly_name')),
              ('Genome size (bp)',d.get('genome_size_bp')),('Chromosomes',d.get('number_of_chromosomes')),
              ('Total genes',d.get('total_genes')),('Protein-coding genes',d.get('protein_coding_genes')),
-             ('Retrieval status',manifest['retrieval_status']),('Snapshot UTC',manifest['created_at']),
+             ('Retrieval status',manifest.get('retrieval_status', manifest.get('status'))),('Snapshot UTC',manifest.get('created_at', d.get('fetched_at'))),
              ('Scope','Captured metadata responses only; not every linked NCBI record.'),
              ('Reading detail sheets','Values are JSON text; null, false, zero and empty strings remain distinct. Join numbered parts before JSON decoding.'),
              ('Original Text','Each source body is UTF-8 decoded and JSON escaped, then split into ordered parts. Original ZIP files remain authoritative.'),
              ('Raw XML and FTP','Complete source text is in Original Text; no XML field mapping is needed to retain its contents.')]
-    add('Assembly Summary',['Field','Value'],summary)
+    if database == 'taxonomy':
+        summary = [(k, d.get(k)) for k in ('tax_id','requested_tax_id','query','scientific_name','common_name','rank','division','parent_tax_id','fetched_at','status')]
+        summary += [('Scope', manifest.get('scope')), ('Details', 'All normalized fields and original source text appear on the remaining sheets.')]
+        add('Taxonomy Summary',['Field','Value'],summary)
+        add('Lineage',['Tax ID','Scientific name','Rank'],[(r.get('tax_id'),r.get('name'),r.get('rank')) for r in d.get('lineage',[])])
+        add('Genetic Codes',['Code type','ID','Name'],[(k,(d.get(k) or {}).get('id'),(d.get(k) or {}).get('name')) for k in ('genetic_code','mitochondrial_genetic_code')])
+    else:
+        add('Assembly Summary',['Field','Value'],summary)
     add('Normalized Metadata',headings,fields(normalized))
     add('Manifest',headings,fields(manifest))
     originals=[]
@@ -85,7 +92,7 @@ def _build(normalized,manifest,entries):
                 if isinstance(value,str):cell.data_type='s'
                 if row_index==0:
                     cell.font=Font(bold=True,color='FFFFFF');cell.fill=PatternFill('solid',fgColor='17365D')
-                if name=='Assembly Summary':cell.alignment=Alignment(wrap_text=True,vertical='top')
+                if name in ('Assembly Summary','Taxonomy Summary'):cell.alignment=Alignment(wrap_text=True,vertical='top')
                 cells.append(cell)
             ws.append(cells)
         ws.auto_filter.ref='A1:'+chr(64+len(headers))+str(len(rows)+1)

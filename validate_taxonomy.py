@@ -24,6 +24,18 @@ def audit(path,case):
       h.update(chunk)
     check(h.hexdigest()==s.get('sha256'),s['name']+' checksum');check(z.getinfo(s['file']).file_size==s.get('size_bytes'),s['name']+' size')
    if s.get('status')=='validated':check(bool(s.get('file')) and s.get('complete') is True,s['name']+' source retained')
+  excel=m.get('excel_export',{})
+  if excel.get('status')=='included':
+   check(excel.get('file')=='metadata.xlsx' and 'metadata.xlsx' in names,'Excel workbook present')
+   if 'metadata.xlsx' in names:
+    import io
+    try:
+     with ZipFile(io.BytesIO(z.read('metadata.xlsx'))) as workbook:
+      check(workbook.testzip() is None and 'xl/workbook.xml' in workbook.namelist(),'Excel package integrity')
+    except Exception:check(False,'Excel package readable')
+  elif excel.get('status')=='omitted':
+   check(bool(excel.get('reason')) and 'metadata.xlsx' not in names,'Excel omission explained')
+  coverage['excel_status']=excel.get('status','not_requested')
   # Name searches can intentionally produce a diagnostic ZIP without a record.
   expected=case.get('expected','record');error=m.get('error') or {};count=error.get('total_matches')
   diagnostic=(expected=='ambiguous' and isinstance(count,int) and count>1) or (expected=='not_found' and count==0)
@@ -65,7 +77,7 @@ def audit(path,case):
      if parts.scheme or parts.netloc or not parts.path:continue
      target=posixpath.normpath(posixpath.join(posixpath.dirname(name),urllib.parse.unquote(parts.path)));check(target in names,'offline link '+target)
   if errors:outcome='FAIL'
- return {'query':query,'outcome':outcome,'checks_passed':len(checks),'errors':errors,'coverage':coverage,'sources':sources,'diagnostic':error,'archive':str(path)}
+ return {'query':query,'outcome':outcome,'checks_passed':len(checks),'errors':errors,'coverage':coverage,'excel_export':m.get('excel_export'),'sources':sources,'diagnostic':error,'archive':str(path)}
 def run():
  p=argparse.ArgumentParser(description=__doc__);p.add_argument('--base-url',default='http://127.0.0.1:5001');p.add_argument('--cases',default=str(Path(__file__).with_name('cases.json')));p.add_argument('--out',default='taxonomy_validation_results');p.add_argument('--limit',type=int,default=12);p.add_argument('--delay',type=float,default=2);p.add_argument('--keep-zips',action='store_true');p.add_argument('--archive');p.add_argument('--query');a=p.parse_args()
  out=Path(a.out);out.mkdir(parents=True,exist_ok=True);results=[]
