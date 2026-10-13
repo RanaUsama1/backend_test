@@ -138,6 +138,8 @@ def make_archive(query,result,sources,error):
                 z.writestr(name,s['body'])
                 panels.append('<details><summary>'+html.escape(name)+'</summary><pre>'+html.escape(s['body'].decode('utf-8',errors='replace'))+'</pre></details>')
             manifest['sources'].append(entry)
+        from record_excel import add_record_excel
+        add_record_excel(z,'protein',result,manifest,manifest['sources'])
         normalized=json.dumps(result,indent=2,ensure_ascii=False); mt=json.dumps(manifest,indent=2)
         z.writestr('manifest.json',mt);z.writestr('normalized_metadata.json',normalized)
         z.writestr('report.html','<!doctype html><meta charset="utf-8"><title>Protein metadata</title>'

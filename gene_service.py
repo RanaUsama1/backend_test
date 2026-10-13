@@ -172,6 +172,8 @@ def make_archive(gid, result, sources, error):
                               html.escape(s['body'].decode('utf-8',errors='replace'))+'</pre></details>')
             manifest['sources'].append(entry)
         normalized=json.dumps(result,indent=2,ensure_ascii=False)
+        from record_excel import add_record_excel
+        add_record_excel(z,'gene',result,manifest,manifest['sources'])
         manifest_text=json.dumps(manifest,indent=2)
         z.writestr('normalized_metadata.json',normalized)
         z.writestr('manifest.json',manifest_text)

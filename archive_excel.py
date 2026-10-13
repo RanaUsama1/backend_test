@@ -64,6 +64,10 @@ def _build(normalized,manifest,entries,database):
         add('Taxonomy Summary',['Field','Value'],summary)
         add('Lineage',['Tax ID','Scientific name','Rank'],[(r.get('tax_id'),r.get('name'),r.get('rank')) for r in d.get('lineage',[])])
         add('Genetic Codes',['Code type','ID','Name'],[(k,(d.get(k) or {}).get('id'),(d.get(k) or {}).get('name')) for k in ('genetic_code','mitochondrial_genetic_code')])
+    elif database != 'assembly':
+        summary = [('Database',database), ('Record',manifest.get('requested_accession') or manifest.get('gene_id') or d.get('accession')), ('Export mode',manifest.get('excel_export',{}).get('mode')), ('Scope','Only captured metadata; see Manifest for Excel exclusions and retrieval limits.')]
+        summary += [(k,v) for k,v in d.items() if not isinstance(v,(dict,list)) and len(str(v)) < 2000][:25]
+        add('Record Summary',['Field','Value'],summary)
     else:
         add('Assembly Summary',['Field','Value'],summary)
     add('Normalized Metadata',headings,fields(normalized))

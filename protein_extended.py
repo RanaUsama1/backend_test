@@ -235,6 +235,8 @@ def make_extended_archive(manifest,records,relationships):
                     except Exception as exc:
                         readable.append({'gene_id':record['requested_id'],'status':'failed','error':type(exc).__name__})
             manifest=dict(manifest,records=entries,readable_reports=readable)
+            from record_excel import add_record_excel
+            add_record_excel(z,'protein_extended',{'records':entries,'relationships':relationships},manifest,[s for r in entries for s in r['sources']])
             mt=json.dumps(manifest,indent=2);rt=json.dumps(relationships,indent=2)
             z.writestr('manifest.json',mt);z.writestr('relationships.json',rt)
             with z.open('report.html','w') as out:

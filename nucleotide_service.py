@@ -127,6 +127,8 @@ def archive_zip(query,result,sources,folder):
             manifest={'database':'nucleotide','requested_accession':query,'created_at':gene.utcnow(),'sources':entries,'status':result['status'] if result else 'failed',
                       'scope':'ESummary, nucleotide GBSeq XML and GenBank text; no linked-record expansion. Large sequences over 2 million bases use summary-only mode when length is known.',
                       'completeness':'not_asserted','normalization_error':result.get('normalization_error') if result else 'identity_not_validated'}
+            from record_excel import add_record_excel
+            add_record_excel(z,'nucleotide',result,manifest,entries)
             z.writestr('manifest.json',json.dumps(manifest,indent=2));z.writestr('normalized_metadata.json',json.dumps(result,indent=2,ensure_ascii=False))
             pages=[];featurefile=Path(folder)/'features.jsonl'
             if result and result.get('record') and featurefile.exists():
