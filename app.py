@@ -21,6 +21,7 @@ from assembly_normalization import finalize_assembly
 from assembly_source_helpers import parse_ftp_stats_file, parse_ena_xml, exact_stats_url
 from pymongo.errors import DuplicateKeyError, PyMongoError
 from taxonomy_service import register_taxonomy_routes
+from excel_export import register_excel_export
 
 ASSEMBLY_CACHE_SCHEMA_VERSION = 4
 
@@ -1068,6 +1069,7 @@ def api_error(message, error_code, status_code, query=None):
 
     return jsonify(response), status_code
 
+register_excel_export(app)
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
