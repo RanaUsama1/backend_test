@@ -9,4 +9,4 @@ flask-cors
 slowapi
 requests
 gunicorn
-
+openpyxl
