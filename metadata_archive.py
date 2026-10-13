@@ -132,6 +132,18 @@ def build_archive(accession, fetcher):
         manifest['normalization_warnings'] = (normalized or {}).get('normalization_warnings', []) if isinstance(normalized, dict) else []
         manifest['statistics_warnings'] = (normalized or {}).get('statistics_warnings', []) if isinstance(normalized, dict) else []
         manifest['retrieval_status'] = 'partial' if manifest['normalization_warnings'] or manifest['source_content_issues'] or status == 'failed' or any(not r.get('http_success') for r in manifest['sources']) else 'captured_not_fully_validated'
+        manifest['excel_export'] = {'status': 'included', 'file': 'metadata.xlsx',
+            'scope': 'Normalized metadata, manifest and all captured UTF-8 source bodies; original bytes remain in sources/.'}
+        try:
+            from archive_excel import build_archive_workbook
+            workbook = build_archive_workbook(normalized, manifest, entries)
+            archive.writestr('metadata.xlsx', workbook)
+        except Exception as exc:
+            reason = str(exc) if isinstance(exc, ValueError) and str(exc) in (
+                'excel_generation_busy', 'excel_input_limit_4_MiB', 'excel_row_limit_30000',
+                'excel_cell_limit', 'nesting_limit') else type(exc).__name__
+            manifest['excel_export'] = {'status': 'omitted', 'reason': reason,
+                'note': 'Original source files remain available. No partial workbook was included.'}
         manifest_bytes = json.dumps(manifest, indent=2, ensure_ascii=False).encode('utf-8')
         archive.writestr('manifest.json', manifest_bytes)
         html = ('<!doctype html><html lang="en"><meta charset="utf-8">'
