@@ -1,3 +1,31 @@
+/Users/mdabdullah/Downloads/Archive/backend_test
+/Users/mdabdullah/Desktop/backend/LlmArena/debugging-ncbi-null-values(2)/src
+
+still problems with arrows. see slide 7
+
+are JSON responses isolated in slide 10?
+
+
+
+
+• Developed responsive React-based interfaces, improving UI consistency and overall user experience
+• Integrated frontend with Node.js based REST APIs, ensuring smooth and reliable data flow
+• Implemented feature enhancements and resolved bugs to maintain application stability
+• Collaborated with cross-functional teams to deliver production-ready features
+
+
+4.6 Automatic Database Detection
+One of the implemented features that differentiates the application from a simple graphical
+wrapper around E-utilities is the automatic classification of submitted queries.
+The backend defines a database-detection function that examines the characteristics of
+the submitted query. It considers patterns associated with accession identifiers, numerical
+identifiers, gene symbols, and organism names and returns the most likely supported database
+category.
+
+
+
+
+
 # NCBI genome discovery catalog and metadata guide
 
 Prepared 1 October 2026. **374 organism, strain, and virus-group search entries**, organized into 9 groups, with five NCBI database links per entry.
@@ -31,6 +59,92 @@ These are specific available assembly examples, not a claim that each is the onl
 | Escherichia coli K-12 MG1655 | ASM584v2 | [GCF_000005845.2](https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_000005845.2/) |
 | Pseudomonas aeruginosa PAO1 | ASM676v1 | [GCF_000006765.1](https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_000006765.1/) |
 | Haloferax volcanii DS2 | ASM2568v1 | [GCF_000025685.1](https://www.ncbi.nlm.nih.gov/datasets/genome/GCF_000025685.1/) |
+
+
+
+#	Gene family / category	Gene symbol	Nucleotide accession
+1	Globins	HBA1	NM_000558.5
+2	Globins	HBB	NM_000518.5
+3	Tumor suppressors	BRCA1	NM_007294.4
+4	Tumor suppressors	TP53	NM_000546.6
+5	ABC transporters	CFTR	NM_000492.4
+6	Cytochrome P450	CYP3A4	NM_017460.6
+7	Growth factor receptors	EGFR	NM_005228.5
+8	Insulin / peptide hormones	INS	NM_000207.3
+9	Cytoskeletal proteins	ACTB	NM_001101.5
+10	Apolipoproteins	APOE	NM_000041.4
+11	Epidermal growth factor receptors	ERBB2	NM_004448.4
+12	DNA repair	ATM	NM_000051.4
+13	DNA repair	BRCA2	NM_000059.4
+14	Cell-cycle regulation	MYC	NM_002467.6
+15	DNA mismatch repair	MLH1	NM_000249.4
+16	DNA mismatch repair	MSH2	NM_000251.3
+17	Immune-related	IL6	NM_000600.5
+18	Immune-related	TNF	NM_000594.4
+19	Transporters	SLC2A1	NM_006516.4
+20	Extracellular matrix	COL1A1	NM_000088.4
+
+
+#	Gene family / category	Gene symbol	Protein accession
+1	Hemoglobin / globins	HBA1	NP_000549.1
+2	Hemoglobin / globins	HBB	NP_000509.1
+3	Tumor suppressors	TP53	NP_000537.3
+4	Breast cancer susceptibility	BRCA1	NP_009225.1
+5	Breast cancer susceptibility	BRCA2	NP_000050.3
+6	Cytochrome P450	CYP3A4	NP_059488.2
+7	Growth factor receptors	EGFR	NP_005219.2
+8	Receptor tyrosine kinases	ERBB2	NP_004439.2
+9	Cytoskeletal proteins	ACTB	NP_001092.1
+10	Apolipoproteins	APOE	NP_000032.1
+11	DNA repair	ATM	NP_000042.3
+12	DNA mismatch repair	MLH1	NP_000240.1
+13	DNA mismatch repair	MSH2	NP_000242.1
+14	Cell-cycle regulation	MYC	NP_002458.2
+15	Insulin hormone	INS	NP_000198.1
+16	Glucose transporters	SLC2A1	NP_006507.2
+17	Extracellular matrix	COL1A1	NP_000079.2
+18	Inflammatory cytokines	IL6	NP_000591.1
+19	Inflammatory cytokines	TNF	NP_000585.2
+20	ABC transporters	CFTR	NP_000483.3
+
+
+
+
+#	Organism scientific name	Common name	NCBI Taxonomy ID
+1	Homo sapiens	Human	9606
+2	Mus musculus	House mouse	10090
+3	Rattus norvegicus	Brown rat	10116
+4	Danio rerio	Zebrafish	7955
+5	Oncorhynchus mykiss	Rainbow trout	8022
+6	Salmo salar	Atlantic salmon	8030
+7	Takifugu rubripes	Japanese pufferfish	31033
+8	Xenopus laevis	African clawed frog	8355
+9	Xenopus tropicalis	Western clawed frog	8364
+10	Gallus gallus	Chicken	9031
+11	Bos taurus	Cattle	9913
+12	Sus scrofa	Pig	9823
+13	Canis lupus familiaris	Domestic dog	9615
+14	Felis catus	Domestic cat	9685
+15	Pan troglodytes	Chimpanzee	9598
+16	Macaca mulatta	Rhesus macaque	9544
+17	Drosophila melanogaster	Fruit fly	7227
+18	Caenorhabditis elegans	Roundworm	6239
+19	Arabidopsis thaliana	Thale cress	3702
+20	Oryza sativa	Rice	4530
+21	Zea mays	Maize / corn	4577
+22	Glycine max	Soybean	3847
+23	Saccharomyces cerevisiae	Baker's yeast	4932
+
+
+
+
+
+
+
+
+
+
+
 
 Evidence for the vertebrate, maize, and honeybee examples: [NCBI annotated eukaryotic genomes](https://www.ncbi.nlm.nih.gov/refseq/annotation_euk/all/). Evidence for the other examples: the linked individual NCBI assembly records.
 

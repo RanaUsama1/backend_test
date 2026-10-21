@@ -10,3 +10,4 @@ slowapi
 requests
 gunicorn
 openpyxl
+certifi
